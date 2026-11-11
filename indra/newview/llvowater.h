@@ -36,6 +36,8 @@ const U32 N_RES = 16; //32          // number of subdivisions of wave tile
 const U8  WAVE_STEP     = 8;
 
 class LLSurface;
+class LLViewerRegion;
+class LLVector3d;
 class LLHeavenBody;
 class LLVOSky;
 class LLFace;
@@ -74,6 +76,10 @@ public:
     bool getIsEdgePatch() const { return mIsEdgePatch; }
 
 protected:
+    // <FS:Outworldz> Sea waves: a vertex every few metres so the sea can move.
+    bool updateWaveGeometry(LLFace* face);
+    // </FS:Outworldz>
+
     bool mIsEdgePatch;
     S32  mRenderType;
 };
@@ -89,5 +95,35 @@ public:
     /*virtual*/ U32 getPartitionType() const;
 };
 
+// <FS:Outworldz> Sea waves. The OpenSim PhysX engine moves boats on four
+// Gerstner waves and sends their settings in SimulatorFeatures
+// OpenSimExtras.PhysXWaves { Height, Style, Direction }. This is the same
+// math as PhysXWaves.cs, so the water drawn here is the water boats ride.
+// Both sides use grid-wide metres and Unix time, so no messages are needed
+// to keep them in step.
+class LLWaterWaves
+{
+public:
+    static const S32 COUNT = 4;
+
+    // The waves of a region's sea; false when its water is flat.
+    static bool forRegion(LLViewerRegion* regionp, LLWaterWaves& waves);
+
+    // Shader uniforms for vertices in agent coordinates. agent_origin is the
+    // agent region's global origin and unix_time the shared wave clock.
+    void getUniforms(const LLVector3d& agent_origin, F64 unix_time,
+                     F32 k[4], F32 amp[4], F32 qa[4], F32 dir_x[4], F32 dir_y[4], F32 phase[4]) const;
+
+private:
+    void set(F64 height, F64 style, F64 direction_degrees);
+
+    F64 mDirX[COUNT];
+    F64 mDirY[COUNT];
+    F64 mK[COUNT];      // wave number, 2 pi / length
+    F64 mOmega[COUNT];  // angular speed, deep water sqrt(g k)
+    F64 mAmp[COUNT];
+    F64 mSteep[COUNT];  // Gerstner Q, the sideways pull toward the crests
+};
+// </FS:Outworldz>
 
 #endif // LL_VOSURFACEPATCH_H

@@ -37,6 +37,8 @@
 #include "llregionflags.h"
 #include "llregionhandle.h"
 #include "llsurface.h"
+#include "llvowater.h" // <FS:Outworldz/> Sea waves
+#include "lldrawable.h" // <FS:Outworldz/> Sea waves
 #include "message.h"
 #include "v3math.h"
 #include "v4math.h"
@@ -2624,9 +2626,22 @@ void LLViewerRegion::setSimulatorFeatures(const LLSD& sim_features)
 
     // copy features to lambda in case the region is deleted before the lambda is executed
     LLSD features = mSimulatorFeatures;
+    U64 region_handle = getHandle(); // <FS:Outworldz/> Sea waves
 
     auto work = [=]()
         {
+            // <FS:Outworldz> Sea waves: redraw this region's water on a fine grid.
+            if (features.has("OpenSimExtras") && features["OpenSimExtras"].has("PhysXWaves"))
+            {
+                LLViewerRegion* regionp = LLWorld::getInstance()->getRegionFromHandle(region_handle);
+                LLVOWater* waterp = regionp ? regionp->getLand().getWaterObj() : nullptr;
+                if (waterp && waterp->mDrawable.notNull())
+                {
+                    gPipeline.markRebuild(waterp->mDrawable, LLDrawable::REBUILD_ALL);
+                }
+            }
+            // </FS:Outworldz>
+
             // if region has MaxTextureResolution, set max_texture_dimension settings, otherwise use default
             if (features.has("MaxTextureResolution"))
             {

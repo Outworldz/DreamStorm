@@ -124,6 +124,14 @@ bool LLVOWater::updateGeometry(LLDrawable *drawable)
         return true;
     }
 
+    // <FS:Outworldz> Sea waves
+    LLWaterWaves waves;
+    if (!mIsEdgePatch && LLPipeline::sRenderTransparentWater && LLWaterWaves::forRegion(getRegion(), waves))
+    {
+        return updateWaveGeometry(face);
+    }
+    // </FS:Outworldz>
+
 //  LLVector2 uvs[4];
 //  LLVector3 vtx[4];
 
@@ -228,6 +236,163 @@ bool LLVOWater::updateGeometry(LLDrawable *drawable)
     LLPipeline::sCompiles++;
     return true;
 }
+
+// <FS:Outworldz> Sea waves
+namespace
+{
+    const F64 WAVE_GRAVITY = 9.81;
+    const F64 WAVE_LENGTH_RATIO[LLWaterWaves::COUNT] = { 1.0, 0.61, 0.37, 0.23 };
+    const F64 WAVE_TURN_DEGREES[LLWaterWaves::COUNT] = { 0.0, 25.0, -35.0, 60.0 };
+    const F64 WAVE_PHASE[LLWaterWaves::COUNT]        = { 0.0, 1.7, 4.1, 2.9 };
+    const F64 WAVE_PI = 3.14159265358979323846;
+
+    const F32 WAVE_GRID_SPACING = 2.f;  // metres between water vertices on a moving sea
+    const S32 WAVE_GRID_MAX     = 254;  // (n + 1)^2 vertices must fit 16-bit indices
+
+    F64 waveLerp(F64 a, F64 b, F64 t) { return a + (b - a) * t; }
+}
+
+bool LLWaterWaves::forRegion(LLViewerRegion* regionp, LLWaterWaves& waves)
+{
+    if (!regionp || !regionp->simulatorFeaturesReceived())
+    {
+        return false;
+    }
+    LLSD features;
+    regionp->getSimulatorFeatures(features);
+    if (!features.has("OpenSimExtras") || !features["OpenSimExtras"].has("PhysXWaves"))
+    {
+        return false;
+    }
+    const LLSD& settings = features["OpenSimExtras"]["PhysXWaves"];
+    F64 height = settings["Height"].asReal();
+    if (height <= 0.0)
+    {
+        return false;
+    }
+    waves.set(height, settings["Style"].asReal(), settings["Direction"].asReal());
+    return true;
+}
+
+void LLWaterWaves::set(F64 height, F64 style, F64 direction_degrees)
+{
+    style = llclamp(style, 0.0, 1.0);
+    F64 main_length = waveLerp(120.0, 12.0, style);
+    F64 steepness   = waveLerp(0.15, 0.7, style);
+    F64 spread      = waveLerp(0.4, 1.0, style);
+
+    F64 amp_sum = 0.0;
+    for (S32 i = 0; i < COUNT; i++)
+    {
+        amp_sum += WAVE_LENGTH_RATIO[i];
+    }
+    for (S32 i = 0; i < COUNT; i++)
+    {
+        F64 length  = main_length * WAVE_LENGTH_RATIO[i];
+        F64 heading = (direction_degrees + WAVE_TURN_DEGREES[i] * spread) * WAVE_PI / 180.0;
+        mDirX[i]  = sin(heading);
+        mDirY[i]  = cos(heading);
+        mK[i]     = 2.0 * WAVE_PI / length;
+        mOmega[i] = sqrt(WAVE_GRAVITY * mK[i]);
+        mAmp[i]   = 0.5 * height * WAVE_LENGTH_RATIO[i] / amp_sum;
+        mSteep[i] = mAmp[i] > 0.0 ? steepness / (mK[i] * mAmp[i] * COUNT) : 0.0;
+    }
+}
+
+void LLWaterWaves::getUniforms(const LLVector3d& agent_origin, F64 unix_time,
+                               F32 k[4], F32 amp[4], F32 qa[4], F32 dir_x[4], F32 dir_y[4], F32 phase[4]) const
+{
+    for (S32 i = 0; i < COUNT; i++)
+    {
+        k[i]     = (F32)mK[i];
+        amp[i]   = (F32)mAmp[i];
+        qa[i]    = (F32)(mSteep[i] * mAmp[i]);
+        dir_x[i] = (F32)mDirX[i];
+        dir_y[i] = (F32)mDirY[i];
+        // The huge part of the phase (grid position and clock) in doubles here;
+        // the shader adds only k * (dir . agent position).
+        F64 p = mK[i] * (mDirX[i] * agent_origin.mdV[VX] + mDirY[i] * agent_origin.mdV[VY])
+              - mOmega[i] * unix_time + WAVE_PHASE[i];
+        phase[i] = (F32)fmod(p, 2.0 * WAVE_PI);
+    }
+}
+
+bool LLVOWater::updateWaveGeometry(LLFace* face)
+{
+    const LLVector3& scale = getScale();
+    const S32 cells_x = llclamp((S32)llround(scale.mV[VX] / WAVE_GRID_SPACING), 1, WAVE_GRID_MAX);
+    const S32 cells_y = llclamp((S32)llround(scale.mV[VY] / WAVE_GRID_SPACING), 1, WAVE_GRID_MAX);
+    const S32 row = cells_x + 1;
+
+    face->setSize(row * (cells_y + 1), cells_x * cells_y * 6);
+
+    LLVertexBuffer* buff = face->getVertexBuffer();
+    if (!buff ||
+        buff->getNumIndices() != face->getIndicesCount() ||
+        buff->getNumVerts() != face->getGeomCount() ||
+        face->getIndicesStart() != 0 ||
+        face->getGeomIndex() != 0)
+    {
+        buff = new LLVertexBuffer(LLDrawPoolWater::VERTEX_DATA_MASK);
+        if (!buff->allocateBuffer(face->getGeomCount(), face->getIndicesCount()))
+        {
+            LL_WARNS() << "Failed to allocate Vertex Buffer for wave water, "
+                << face->getGeomCount() << " vertices and "
+                << face->getIndicesCount() << " indices" << LL_ENDL;
+        }
+        face->setIndicesIndex(0);
+        face->setGeomIndex(0);
+        face->setVertexBuffer(buff);
+    }
+
+    LLStrider<LLVector3> verticesp, normalsp;
+    LLStrider<LLVector2> texCoordsp;
+    LLStrider<U16> indicesp;
+    U16 index_offset = face->getGeometry(verticesp, normalsp, texCoordsp, indicesp);
+
+    face->mCenterAgent = getPositionAgent();
+    face->mCenterLocal = getPositionAgent();
+
+    const LLVector3 corner = getPositionAgent() - scale * 0.5f;
+    const F32 water_z = getPositionAgent().mV[VZ];
+    const F32 step_x = scale.mV[VX] / cells_x;
+    const F32 step_y = scale.mV[VY] / cells_y;
+    const LLVector3 normal(0.f, 0.f, 1.f);
+
+    for (S32 y = 0; y <= cells_y; y++)
+    {
+        for (S32 x = 0; x <= cells_x; x++)
+        {
+            *verticesp++  = LLVector3(corner.mV[VX] + x * step_x, corner.mV[VY] + y * step_y, water_z);
+            *texCoordsp++ = LLVector2((F32)x / cells_x, (F32)y / cells_y);
+            *normalsp++   = normal;
+        }
+    }
+
+    for (S32 y = 0; y < cells_y; y++)
+    {
+        for (S32 x = 0; x < cells_x; x++)
+        {
+            U16 i0 = (U16)(index_offset + y * row + x);
+            U16 i1 = i0 + 1;
+            U16 i2 = (U16)(i0 + row);
+            U16 i3 = i2 + 1;
+            *indicesp++ = i0;
+            *indicesp++ = i1;
+            *indicesp++ = i2;
+            *indicesp++ = i1;
+            *indicesp++ = i3;
+            *indicesp++ = i2;
+        }
+    }
+
+    buff->unmapBuffer();
+
+    mDrawable->movePartition();
+    LLPipeline::sCompiles++;
+    return true;
+}
+// </FS:Outworldz>
 
 void LLVOWater::initClass()
 {

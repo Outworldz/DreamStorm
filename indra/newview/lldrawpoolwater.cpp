@@ -48,6 +48,7 @@
 #include "llenvironment.h"
 #include "llsettingssky.h"
 #include "llsettingswater.h"
+#include "lldate.h" // <FS:Outworldz/> Sea waves
 
 bool LLDrawPoolWater::sSkipScreenCopy = false;
 bool LLDrawPoolWater::sNeedsReflectionUpdate = true;
@@ -321,10 +322,42 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
 
 void LLDrawPoolWater::pushWaterPlanes(int pass)
 {
+    // <FS:Outworldz> Sea waves: each region's water gets its own waves; void water stays flat.
+    static LLStaticHashedString s_wave_k("waveK");
+    static LLStaticHashedString s_wave_amp("waveAmp");
+    static LLStaticHashedString s_wave_qa("waveQA");
+    static LLStaticHashedString s_wave_dir_x("waveDirX");
+    static LLStaticHashedString s_wave_dir_y("waveDirY");
+    static LLStaticHashedString s_wave_phase("wavePhase");
+
+    LLGLSLShader* shader = LLGLSLShader::sCurBoundShaderPtr;
+    LLViewerRegion* agent_region = gAgent.getRegion();
+    const LLVector3d agent_origin = agent_region ? agent_region->getOriginGlobal() : LLVector3d::zero;
+    const F64 now = LLDate::now().secondsSinceEpoch();
+    // </FS:Outworldz>
+
     LLVOWater* water = nullptr;
     for (LLFace* const& face : mDrawFace)
     {
         water = static_cast<LLVOWater*>(face->getViewerObject());
+
+        // <FS:Outworldz> Sea waves
+        if (shader)
+        {
+            F32 k[4] = { 0.f }, amp[4] = { 0.f }, qa[4] = { 0.f }, dir_x[4] = { 0.f }, dir_y[4] = { 0.f }, phase[4] = { 0.f };
+            LLWaterWaves waves;
+            if (LLPipeline::sRenderTransparentWater && !water->getIsEdgePatch() && LLWaterWaves::forRegion(water->getRegion(), waves))
+            {
+                waves.getUniforms(agent_origin, now, k, amp, qa, dir_x, dir_y, phase);
+            }
+            shader->uniform4fv(s_wave_k, 1, k);
+            shader->uniform4fv(s_wave_amp, 1, amp);
+            shader->uniform4fv(s_wave_qa, 1, qa);
+            shader->uniform4fv(s_wave_dir_x, 1, dir_x);
+            shader->uniform4fv(s_wave_dir_y, 1, dir_y);
+            shader->uniform4fv(s_wave_phase, 1, phase);
+        }
+        // </FS:Outworldz>
 
         face->renderIndexed();
 

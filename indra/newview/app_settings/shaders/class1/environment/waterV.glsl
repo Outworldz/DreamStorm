@@ -39,6 +39,16 @@ uniform vec3 eyeVec;
 uniform float waterHeight;
 uniform vec3 lightDir;
 
+// <FS:Outworldz> Sea waves: four Gerstner waves, the same as the OpenSim PhysX
+// engine's, so boats bob on the crests drawn here. All zero on flat water.
+uniform vec4 waveK;      // wave number per wave
+uniform vec4 waveAmp;    // amplitude
+uniform vec4 waveQA;     // sideways pull, Gerstner Q times amplitude
+uniform vec4 waveDirX;   // travel direction
+uniform vec4 waveDirY;
+uniform vec4 wavePhase;  // phase at the agent region's origin, now
+// </FS:Outworldz>
+
 out vec4 refCoord;
 out vec4 littleWave;
 out vec4 view;
@@ -53,16 +63,46 @@ float wave(vec2 v, float t, float f, vec2 d, float s)
    return (dot(d, v)*f + t*s)*f;
 }
 
+// <FS:Outworldz> Sea waves: how far the surface point resting at p moves,
+// and the surface normal and tangent there. fade scales the sea down far away.
+vec3 seaWaves(vec2 p, float fade, out vec3 n, out vec3 t)
+{
+    vec4 theta = waveK * (waveDirX * p.x + waveDirY * p.y) + wavePhase;
+    vec4 c = cos(theta);
+    vec4 s = sin(theta);
+    vec4 amp = waveAmp * fade;
+    vec4 qa = waveQA * fade;
+
+    vec3 move = vec3(dot(waveDirX, -qa * s), dot(waveDirY, -qa * s), dot(amp, c));
+
+    // Slopes along x and y; the normal is their cross product.
+    vec4 qc = waveK * qa * c;
+    vec4 ks = waveK * amp * s;
+    vec3 along_x = vec3(1.0 - dot(qc, waveDirX * waveDirX), -dot(qc, waveDirX * waveDirY), -dot(ks, waveDirX));
+    vec3 along_y = vec3(-dot(qc, waveDirX * waveDirY), 1.0 - dot(qc, waveDirY * waveDirY), -dot(ks, waveDirY));
+    n = normalize(cross(along_x, along_y));
+    t = normalize(along_x);
+    return move;
+}
+// </FS:Outworldz>
+
 void main()
 {
+    // <FS:Outworldz> Sea waves: move the vertex with the sea, fading out far away.
+    vec3 sea_normal;
+    vec3 sea_tangent;
+    float sea_fade = 1.0 - smoothstep(384.0, 768.0, length(position.xy - eyeVec.xy));
+    vec3 sea_position = position + seaWaves(position.xy, sea_fade, sea_normal, sea_tangent);
+    // </FS:Outworldz>
+
     //transform vertex
-    vec4 pos = vec4(position.xyz, 1.0);
+    vec4 pos = vec4(sea_position, 1.0); // <FS:Outworldz/> was position.xyz
     mat4 modelViewProj = modelview_projection_matrix;
 
     vary_position = (modelview_matrix * pos).xyz;
     vary_light_dir = normal_matrix * lightDir;
-    vary_normal = normal_matrix * vec3(0, 0, 1);
-    vary_tangent = normal_matrix * vec3(1, 0, 0);
+    vary_normal = normal_matrix * sea_normal;   // <FS:Outworldz/> was vec3(0, 0, 1)
+    vary_tangent = normal_matrix * sea_tangent; // <FS:Outworldz/> was vec3(1, 0, 0)
 
     vec4 oPosition;
 
@@ -79,7 +119,7 @@ void main()
     d = clamp(ld/1536.0-0.5, 0.0, 1.0);
     d *= d;
 
-    oPosition = vec4(position, 1.0);
+    oPosition = vec4(sea_position, 1.0); // <FS:Outworldz/> was position
 //  oPosition.z = mix(oPosition.z, max(eyeVec.z*0.75, 0.0), d); // SL-11589 remove "U" shaped horizon
 
     oPosition = modelViewProj * oPosition;
