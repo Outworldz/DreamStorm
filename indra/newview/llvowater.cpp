@@ -124,9 +124,14 @@ bool LLVOWater::updateGeometry(LLDrawable *drawable)
         return true;
     }
 
-    // <FS:Outworldz> Sea waves
+    // <FS:Outworldz> Sea waves. Hole water (filling empty grid squares around
+    // the agent's region) belongs to the agent's region, so it carries on the
+    // same waves. Far patches keep the coarse grid: the shader fades waves out by 768 m.
     LLWaterWaves waves;
-    if (!mIsEdgePatch && LLPipeline::sRenderTransparentWater && LLWaterWaves::forRegion(getRegion(), waves))
+    const LLVector3 centre = getPositionAgent();
+    const F32 region_half = getRegion() ? getRegion()->getWidth() * 0.5f : 128.f;
+    const bool near_agent = llabs(centre.mV[VX] - region_half) < 1024.f && llabs(centre.mV[VY] - region_half) < 1024.f;
+    if (!mIsEdgePatch && near_agent && LLPipeline::sRenderTransparentWater && LLWaterWaves::forRegion(getRegion(), waves))
     {
         return updateWaveGeometry(face);
     }
@@ -353,8 +358,9 @@ bool LLVOWater::updateWaveGeometry(LLFace* face)
     face->mCenterAgent = getPositionAgent();
     face->mCenterLocal = getPositionAgent();
 
+    // Hole water sits 256 m up with a 512 m height; the surface is its bottom.
     const LLVector3 corner = getPositionAgent() - scale * 0.5f;
-    const F32 water_z = getPositionAgent().mV[VZ];
+    const F32 water_z = corner.mV[VZ];
     const F32 step_x = scale.mV[VX] / cells_x;
     const F32 step_y = scale.mV[VY] / cells_y;
     const LLVector3 normal(0.f, 0.f, 1.f);
