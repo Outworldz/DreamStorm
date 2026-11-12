@@ -83,7 +83,7 @@ git cherry-pick c52e7e69d6 493fdcab6d
 - `Style`: 0 to 1, from long gentle swell to short steep chop.
 - `Direction`: the direction the waves travel, in compass degrees (0 = north, 90 = east).
 
-With no `PhysXWaves` (Second Life, other physics engines, or waves turned off) the patch changes nothing and the water draws exactly as before. The wave formula (a sum of 4 Gerstner waves in grid-wide metres, timed by the Unix clock) is in `LLWaterWaves` in `llvowater.cpp`. It must match the simulator's wave code (`PhysXWaves.cs` in the Outworldz PhysX physics module for OpenSim) exactly, so boats float on the crests the viewer draws. If you change one, change both.
+With no `PhysXWaves` (Second Life, other physics engines, or waves turned off) the patch changes nothing and the water draws exactly as before. The wave formula (a sum of 4 Gerstner waves in grid-wide metres, timed by the Unix clock) is in `LLWaterWaves` in `llvowater.cpp`. It must match the simulator's wave code (`PhysXWaves.cs` in the [Outworldz PhysX physics module for OpenSim](https://github.com/Outworldz/Opensimulator_Physx)) exactly, so boats float on the crests the viewer draws. If you change one, change both.
 
 ### Building it yourself
 
