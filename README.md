@@ -53,13 +53,56 @@ Firestorm, and so this fork, is under the [GNU Lesser General Public License v2.
 
 ### Building it yourself
 
-Follow the normal [Windows build instructions](doc/building_windows.md), using branch `Water` and the `ReleaseFS_open` configuration. Outworldz builds it with Visual Studio 2026:
+The steps are the same as for normal Firestorm, with three differences: clone this fork, use branch `Water`, and use the `ReleaseFS_open` configuration (open-source libraries only, no FMOD or KDU licence needed). Every platform needs [autobuild](https://github.com/secondlife/autobuild) and the build variables:
 
-- autobuild 3.10.2 needs a local patch so that it knows Visual Studio 18 ("Visual Studio 18 2026", toolset v145); set `AUTOBUILD_VSVER=180`.
+```
+git clone -b Water https://github.com/Outworldz/phoenix-firestorm.git
+git clone https://github.com/FirestormViewer/fs-build-variables.git
+export AUTOBUILD_VARIABLES_FILE=$PWD/fs-build-variables/variables
+cd phoenix-firestorm
+```
+
+#### Windows
+
+Follow the [Windows build instructions](doc/building_windows.md). Outworldz builds with Visual Studio 2026:
+
+- autobuild 3.10.2 needs a local patch so that it knows Visual Studio 18 ("Visual Studio 18 2026", toolset v145); set `AUTOBUILD_VSVER=180`. With Visual Studio 2022 no patch is needed.
 - Visual Studio's bundled CMake 4 needs `CMAKE_POLICY_VERSION_MINIMUM=3.5`.
 - `mt.exe` from Windows SDK 10.0.28000 cannot find `midlrtmd.dll` (link error LNK1327); put the 10.0.26100 SDK `bin\x64` folder on PATH.
-- Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`, then `autobuild build -A 64 -c ReleaseFS_open --no-configure`.
-- The installer needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set.
+- Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`
+- Build: `autobuild build -A 64 -c ReleaseFS_open --no-configure`
+- The installer (`*Setup.exe` in `build-vc*-64/newview/Release`) needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set.
+
+#### Linux
+
+Follow the [Linux build instructions](doc/building_linux.md) (written for Ubuntu 22.04/24.04). In short:
+
+```
+sudo apt install libgl1-mesa-dev libglu1-mesa-dev libpulse-dev build-essential python3-pip git libssl-dev libxinerama-dev libxrandr-dev libfontconfig-dev libfreetype6-dev cmake
+pip install autobuild llsd
+autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE --package
+autobuild build -A 64 -c ReleaseFS_open --no-configure
+```
+
+- The first build takes about an hour and needs 16 GB of memory or more (add swap, or use fewer cores, if it runs out).
+- The result is a `.tar.xz` in `build-linux-x86_64/newview`. Unpack it anywhere and run `./firestorm` from that folder. For a menu entry, run `etc/refresh_desktop_app_entry.sh` from that folder once.
+
+#### macOS
+
+Follow the [macOS build instructions](doc/building_macos.md). In short:
+
+1. Install Xcode (open it once so it finishes setting up), then `brew install cmake` (or the CMake app from cmake.org).
+2. `pip3 install autobuild llsd`
+3. Configure and build:
+
+```
+autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE --package
+autobuild build -A 64 -c ReleaseFS_open --no-configure
+```
+
+- The result is a `.dmg` in `build-darwin-*/newview`.
+- A self-built Mac viewer is not signed by Apple. The first time, right-click the app and choose **Open**, then **Open** again. If macOS still says it is damaged, run `xattr -dr com.apple.quarantine /Applications/Firestorm*.app` once in Terminal.
+- The Mac and Linux builds have not been tested by Outworldz yet. Please report what you find on the [issues page](https://github.com/Outworldz/phoenix-firestorm/issues).
 
 ---
 
