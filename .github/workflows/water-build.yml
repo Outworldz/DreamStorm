@@ -1,0 +1,105 @@
+# <FS:Outworldz> Linux and macOS builds of the Water (sea waves) branch.
+# Open-source libraries only (ReleaseFS_open: no FMOD, no KDU, no private
+# packages or signing secrets). Start it by hand from the Actions tab; give a
+# release tag to attach the results to that GitHub release.
+name: Water build (Linux, macOS)
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to attach the builds to (empty = artifacts only)'
+        required: false
+        default: ''
+permissions:
+  contents: write
+env:
+  AUTOBUILD_VARIABLES_FILE: ${{ github.workspace }}/build-variables/variables
+  XZ_DEFAULTS: -T0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "macos-15"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Bash 4 and GNU sed (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash gnu-sed
+          echo "$(brew --prefix)/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix)/opt/gnu-sed/libexec/gnubin" >> $GITHUB_PATH
+
+      - name: Get the code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build variables
+        uses: actions/checkout@v4
+        with:
+          repository: FirestormViewer/fs-build-variables
+          path: build-variables
+
+      - name: Python
+        id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Python requirements
+        run: |
+          echo "PYTHON=${{ steps.py.outputs.python-path }}" >> $GITHUB_ENV
+          python -m pip install -r requirements.txt
+        shell: bash
+
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          swap-storage: false
+
+      - name: Packages and GCC 14 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 python3-setuptools mesa-common-dev libgl1-mesa-dev \
+            libglu1-mesa-dev libxinerama-dev libxrandr-dev libpulse-dev libfreetype6-dev libfontconfig1-dev
+          echo "CC=gcc-14" >> $GITHUB_ENV
+          echo "CXX=g++-14" >> $GITHUB_ENV
+
+      - name: Configure
+        run: autobuild configure -c ReleaseFS_open -A64 -- --package --chan Water -DLL_TESTS:BOOL=FALSE
+        shell: bash
+
+      - name: Build
+        run: autobuild build -c ReleaseFS_open -A64 --no-configure
+        shell: bash
+
+      - name: List results
+        run: ls -la build-*/newview/*.xz build-*/newview/*.dmg 2>/dev/null || ls -la build-*/newview
+        shell: bash
+
+      - name: Upload artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-linux
+          path: build-linux-*/newview/*.tar.xz
+
+      - name: Upload artifacts (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-macos
+          path: build-darwin-*/newview/*.dmg
+
+      - name: Attach to release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(ls build-linux-*/newview/*.tar.xz build-darwin-*/newview/*.dmg 2>/dev/null || true)
+          gh release upload "${{ inputs.release_tag }}" $files --clobber
+        shell: bash
