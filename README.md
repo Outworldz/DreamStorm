@@ -4,18 +4,18 @@
 
 > [!IMPORTANT]
 > **This is the Outworldz fork, branch `Water`. It is NOT the official Firestorm viewer.**
-> It is an unofficial build made by [Outworldz](https://www.outworldz.com) for [DreamGrid](https://www.outworldz.com/DreamGrid/) and other OpenSim grids. Please do not report problems with it to the Firestorm team; open an issue on [this fork](https://github.com/Outworldz/phoenix-firestorm/issues) instead.
+> It is an unofficial build made by [Outworldz](https://www.outworldz.com) for [DreamGrid](https://www.outworldz.com/DreamGrid/) and other OpenSim grids. Please do not report problems with it to the Firestorm team; open an issue on [this fork](https://github.com/Outworldz/DreamStorm/issues) instead.
 
-## Outworldz Sea Waves build
+## DreamStorm (Firestorm with DreamGrid OceanMotion waves)
 
-This build draws moving sea waves on OpenSim regions that run the PhysX physics engine with waves turned on. The waves you see are the same waves the simulator uses, so boats and floating objects bob on the crests you see, not on flat water.
+**DreamStorm** is the Outworldz name for this build. It draws moving sea waves on OpenSim regions that run the PhysX physics engine with waves turned on. The waves you see are the same waves the simulator uses, so boats and floating objects bob on the crests you see, not on flat water.
 
 ### Download
 
-A signed Windows installer is on the [Releases page](https://github.com/Outworldz/phoenix-firestorm/releases) of this fork.
+A signed Windows installer is on the [Releases page](https://github.com/Outworldz/DreamStorm/releases) of this fork.
 
 - The installer is Authenticode-signed by Outworldz, so Windows shows Outworldz as the publisher.
-- It installs as its own program, **Firestorm-Water**, next to any normal Firestorm. It does not replace or update the official viewer.
+- It installs as its own program, **Firestorm-DreamStorm**, next to any normal Firestorm. It does not replace or update the official viewer.
 - It shares settings with the official 64-bit Firestorm (`%APPDATA%\Firestorm_x64`).
 - This is an OpenSim build (open-source libraries only). It uses OpenAL for sound instead of FMOD, and OpenJPEG for textures instead of KDU, so textures may load a little slower than in the official viewer.
 
@@ -58,7 +58,7 @@ All the sea-wave code is in one patch file: [`patches/outworldz-sea-waves.patch`
 **Apply it with git** (from the top of your Firestorm source tree):
 
 ```
-curl -LO https://raw.githubusercontent.com/Outworldz/phoenix-firestorm/Water/patches/outworldz-sea-waves.patch
+curl -LO https://raw.githubusercontent.com/Outworldz/DreamStorm/Water/patches/outworldz-sea-waves.patch
 git apply --check outworldz-sea-waves.patch
 git apply --3way outworldz-sea-waves.patch
 ```
@@ -72,7 +72,7 @@ git apply --3way outworldz-sea-waves.patch
 **Or pull the commits** instead of the file, which keeps the history:
 
 ```
-git remote add outworldz https://github.com/Outworldz/phoenix-firestorm.git
+git remote add outworldz https://github.com/Outworldz/DreamStorm.git
 git fetch outworldz Water
 git cherry-pick c52e7e69d6 493fdcab6d
 ```
@@ -90,7 +90,7 @@ With no `PhysXWaves` (Second Life, other physics engines, or waves turned off) t
 The steps are the same as for normal Firestorm, with three differences: clone this fork, use branch `Water`, and use the `ReleaseFS_open` configuration (open-source libraries only, no FMOD or KDU licence needed). Every platform needs [autobuild](https://github.com/secondlife/autobuild) and the build variables:
 
 ```
-git clone -b Water https://github.com/Outworldz/phoenix-firestorm.git
+git clone -b Water https://github.com/Outworldz/DreamStorm.git
 git clone https://github.com/FirestormViewer/fs-build-variables.git
 export AUTOBUILD_VARIABLES_FILE=$PWD/fs-build-variables/variables
 cd phoenix-firestorm
@@ -103,7 +103,7 @@ Follow the [Windows build instructions](doc/building_windows.md). Outworldz buil
 - autobuild 3.10.2 needs a local patch so that it knows Visual Studio 18 ("Visual Studio 18 2026", toolset v145); set `AUTOBUILD_VSVER=180`. With Visual Studio 2022 no patch is needed.
 - Visual Studio's bundled CMake 4 needs `CMAKE_POLICY_VERSION_MINIMUM=3.5`.
 - `mt.exe` from Windows SDK 10.0.28000 cannot find `midlrtmd.dll` (link error LNK1327); put the 10.0.26100 SDK `bin\x64` folder on PATH.
-- Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`
+- Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`
 - Build: `autobuild build -A 64 -c ReleaseFS_open --no-configure`
 - The installer (`*Setup.exe` in `build-vc*-64/newview/Release`) needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set.
 
@@ -114,7 +114,7 @@ Follow the [Linux build instructions](doc/building_linux.md) (written for Ubuntu
 ```
 sudo apt install libgl1-mesa-dev libglu1-mesa-dev libpulse-dev build-essential python3-pip git libssl-dev libxinerama-dev libxrandr-dev libfontconfig-dev libfreetype6-dev cmake
 pip install autobuild llsd
-autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE --package
+autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE --package
 autobuild build -A 64 -c ReleaseFS_open --no-configure
 ```
 
@@ -130,13 +130,13 @@ Follow the [macOS build instructions](doc/building_macos.md). In short:
 3. Configure and build:
 
 ```
-autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE --package
+autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE --package
 autobuild build -A 64 -c ReleaseFS_open --no-configure
 ```
 
 - The result is a `.dmg` in `build-darwin-*/newview`.
 - A self-built Mac viewer is not signed by Apple. The first time, right-click the app and choose **Open**, then **Open** again. If macOS still says it is damaged, run `xattr -dr com.apple.quarantine /Applications/Firestorm*.app` once in Terminal.
-- The Mac and Linux builds have not been tested by Outworldz yet. Please report what you find on the [issues page](https://github.com/Outworldz/phoenix-firestorm/issues).
+- The Mac and Linux builds have not been tested by Outworldz yet. Please report what you find on the [issues page](https://github.com/Outworldz/DreamStorm/issues).
 
 ---
 

@@ -2,7 +2,7 @@
 # Open-source libraries only (ReleaseFS_open: no FMOD, no KDU, no private
 # packages or signing secrets). Start it by hand from the Actions tab; give a
 # release tag to attach the results to that GitHub release.
-name: Water build (Linux, macOS)
+name: DreamStorm build (Linux, macOS)
 on:
   workflow_dispatch:
     inputs:
@@ -70,7 +70,7 @@ jobs:
           echo "CXX=g++-14" >> $GITHUB_ENV
 
       - name: Configure
-        run: autobuild configure -c ReleaseFS_open -A64 -- --package --chan Water -DLL_TESTS:BOOL=FALSE
+        run: autobuild configure -c ReleaseFS_open -A64 -- --package --chan DreamStorm -DLL_TESTS:BOOL=FALSE
         shell: bash
 
       - name: Build
@@ -85,14 +85,14 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: Water-linux
+          name: DreamStorm-linux
           path: build-linux-*/newview/*.tar.xz
 
       - name: Upload artifacts (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: Water-macos
+          name: DreamStorm-macos
           path: build-darwin-*/newview/*.dmg
 
       - name: Attach to release
