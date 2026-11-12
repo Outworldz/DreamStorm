@@ -51,6 +51,40 @@ Firestorm, and so this fork, is under the [GNU Lesser General Public License v2.
 - Second Life's [Third Party Viewer Policy](https://secondlife.com/corporate/third-party-viewers) applies if you take this viewer to Second Life. The wave changes do nothing there.
 - The Firestorm team asks that code used beyond personal use comes from an official release branch. This branch is based on Firestorm's development code (7.2.5 preview), so treat it as a test build.
 
+### Patch for viewer developers
+
+All the sea-wave code is in one patch file: [`patches/outworldz-sea-waves.patch`](patches/outworldz-sea-waves.patch) (5 files, about 300 lines). It is made against Firestorm `master` at `41c40409d9` (7.2.5 preview) and was checked to apply cleanly to Firestorm `master` on 2026-11-11. It touches only the viewer's water code, so it should also port to other viewers based on the Second Life viewer.
+
+**Apply it with git** (from the top of your Firestorm source tree):
+
+```
+curl -LO https://raw.githubusercontent.com/Outworldz/phoenix-firestorm/Water/patches/outworldz-sea-waves.patch
+git apply --check outworldz-sea-waves.patch
+git apply --3way outworldz-sea-waves.patch
+```
+
+1. `--check` only tests it and changes nothing. No output means it fits.
+2. `--3way` applies it. If your tree has moved on, git merges the changes and marks any real conflicts in the files for you to fix by hand.
+3. Rebuild the viewer as usual. No new libraries, settings or build switches are needed.
+
+**Without git:** `patch -p1 < outworldz-sea-waves.patch`
+
+**Or pull the commits** instead of the file, which keeps the history:
+
+```
+git remote add outworldz https://github.com/Outworldz/phoenix-firestorm.git
+git fetch outworldz Water
+git cherry-pick c52e7e69d6 493fdcab6d
+```
+
+**What the simulator must send.** The viewer draws waves only when the region's simulator features contain `OpenSimExtras.PhysXWaves`, a map with:
+
+- `Height`: wave height in metres, crest to trough (0 = flat water).
+- `Style`: 0 to 1, from long gentle swell to short steep chop.
+- `Direction`: the direction the waves travel, in compass degrees (0 = north, 90 = east).
+
+With no `PhysXWaves` (Second Life, other physics engines, or waves turned off) the patch changes nothing and the water draws exactly as before. The wave formula (a sum of 4 Gerstner waves in grid-wide metres, timed by the Unix clock) is in `LLWaterWaves` in `llvowater.cpp`. It must match the simulator's wave code (`PhysXWaves.cs` in the Outworldz PhysX physics module for OpenSim) exactly, so boats float on the crests the viewer draws. If you change one, change both.
+
 ### Building it yourself
 
 The steps are the same as for normal Firestorm, with three differences: clone this fork, use branch `Water`, and use the `ReleaseFS_open` configuration (open-source libraries only, no FMOD or KDU licence needed). Every platform needs [autobuild](https://github.com/secondlife/autobuild) and the build variables:
