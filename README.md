@@ -2,6 +2,67 @@
 
 **[Firestorm](https://www.firestormviewer.org) is a free client for 3D virtual worlds such as Second Life and various OpenSim worlds where users can create, connect and chat with others from around the world.**
 
+> [!IMPORTANT]
+> **This is the Outworldz fork, branch `Water`. It is NOT the official Firestorm viewer.**
+> It is an unofficial build made by [Outworldz](https://www.outworldz.com) for [DreamGrid](https://www.outworldz.com/DreamGrid/) and other OpenSim grids. Please do not report problems with it to the Firestorm team; open an issue on [this fork](https://github.com/Outworldz/phoenix-firestorm/issues) instead.
+
+## Outworldz Sea Waves build
+
+This build draws moving sea waves on OpenSim regions that run the PhysX physics engine with waves turned on. The waves you see are the same waves the simulator uses, so boats and floating objects bob on the crests you see, not on flat water.
+
+### Download
+
+A signed Windows installer is on the [Releases page](https://github.com/Outworldz/phoenix-firestorm/releases) of this fork.
+
+- The installer is Authenticode-signed by Outworldz, so Windows shows Outworldz as the publisher.
+- It installs as its own program, **Firestorm-Water**, next to any normal Firestorm. It does not replace or update the official viewer.
+- It shares settings with the official 64-bit Firestorm (`%APPDATA%\Firestorm_x64`).
+- This is an OpenSim build (open-source libraries only). It uses OpenAL for sound instead of FMOD, and OpenJPEG for textures instead of KDU, so textures may load a little slower than in the official viewer.
+
+### How to see the waves
+
+1. The region must run PhysX with waves on. In DreamGrid: region settings, Water tab, Sea Waves.
+2. In the viewer, keep **Transparent Water** on (Preferences, Graphics). With it off, the water stays flat.
+3. Keep your PC clock correct (Windows time sync on). The waves are timed by the clock, so a wrong clock moves the crests away from where the boats are.
+
+The simulator tells the viewer about the waves through the region's simulator features (`OpenSimExtras.PhysXWaves`: Height, Style, Direction). Regions without it, and every Second Life region, show normal flat water.
+
+### Known limits
+
+- Waves are drawn on your own region and on empty water up to about 1 km away. Water further out stays flat, and the waves fade out smoothly between 384 and 768 m.
+- A change of wave direction from the region's environment reaches the viewer when you next enter the region.
+
+### What changed from Firestorm
+
+All changes are marked `<FS:Outworldz>` in the code.
+
+- `indra/newview/llvowater.h`, `llvowater.cpp`: reads the wave settings and builds a 2 m grid for the water surface.
+- `indra/newview/lldrawpoolwater.cpp`: passes the wave settings to the water shader.
+- `indra/newview/llviewerregion.cpp`: rebuilds the water when the wave settings arrive.
+- `indra/newview/app_settings/shaders/class1/environment/waterV.glsl`: moves the water surface with the same wave formula the simulator uses.
+
+### Licence
+
+Firestorm, and so this fork, is under the [GNU Lesser General Public License v2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html) (LGPL).
+
+- The full source for every installer published here is this repository, branch `Water`. Each release names the exact commit it was built from.
+- You may use, change and pass on this build under the same licence. If you pass on a changed copy, you must offer its source code too.
+- "Firestorm" is the name of the Phoenix Firestorm Project's viewer. This build uses the name only to say what it is based on. It is not made, checked or supported by the Firestorm team.
+- Second Life's [Third Party Viewer Policy](https://secondlife.com/corporate/third-party-viewers) applies if you take this viewer to Second Life. The wave changes do nothing there.
+- The Firestorm team asks that code used beyond personal use comes from an official release branch. This branch is based on Firestorm's development code (7.2.5 preview), so treat it as a test build.
+
+### Building it yourself
+
+Follow the normal [Windows build instructions](doc/building_windows.md), using branch `Water` and the `ReleaseFS_open` configuration. Outworldz builds it with Visual Studio 2026:
+
+- autobuild 3.10.2 needs a local patch so that it knows Visual Studio 18 ("Visual Studio 18 2026", toolset v145); set `AUTOBUILD_VSVER=180`.
+- Visual Studio's bundled CMake 4 needs `CMAKE_POLICY_VERSION_MINIMUM=3.5`.
+- `mt.exe` from Windows SDK 10.0.28000 cannot find `midlrtmd.dll` (link error LNK1327); put the 10.0.26100 SDK `bin\x64` folder on PATH.
+- Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan Water -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`, then `autobuild build -A 64 -c ReleaseFS_open --no-configure`.
+- The installer needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set.
+
+---
+
 This repository contains the official source code for the Firestorm viewer.
 
 ## Open Source
