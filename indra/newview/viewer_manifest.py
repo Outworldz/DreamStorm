@@ -979,7 +979,10 @@ class Windows_x86_64_Manifest(ViewerManifest):
         elif self.channel_type() == 'nightly':
             return 'https://www.firestormviewer.org/firestorm-nightly-build-downloads'
         else:
-            return '<NO-URL>'
+            # <FS:Outworldz> No download page for other channels (e.g. DreamStorm): the installer then skips the AVX2 offer
+            #return '<NO-URL>'
+            return ''
+            # </FS:Outworldz>
         
 
     def package_finish(self):

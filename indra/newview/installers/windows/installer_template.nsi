@@ -420,7 +420,7 @@ Call CheckCPUFlags							# Make sure we have SSE2 support
 # but also allow them to override.
 ${If} ${ISAVX2} == 1
   Call CheckCPUFlagsAVX2
-${Else}
+${ElseIf} "${DL_URL}" != ""   ; <FS:Outworldz/> only offer the AVX2 build when there is a page to get it from
   Call CheckCPUFlagsAVX2_Prompt
 ${EndIf}
 
