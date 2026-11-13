@@ -113,8 +113,7 @@ const S32 XL8_PADDING = 3;  // XL8_START_TAG.size() + XL8_END_TAG.size()
 const static U32 SESSION_INITIALIZATION_TIMEOUT = 30;
 
 // This enum corresponds to the sim's and adds P2P_CHAT_SESSION,
-// as webrtc uses the multiagent chat mechanism for p2p calls,
-// instead of relying on vivox calling.
+// as webrtc uses the multiagent chat mechanism for p2p calls.
 // Don't change this without consulting a server developer.
 enum EMultiAgentChatSessionType
 {
@@ -2195,12 +2194,6 @@ void deliverMessage(const std::string& utf8_text,
     info = LLAvatarTracker::instance().getBuddyInfo(other_participant_id);
 
     U8 offline = (!info || info->isOnline()) ? IM_ONLINE : IM_OFFLINE;
-    // Old call to send messages to SLim client,  no longer supported.
-    //if((offline == IM_OFFLINE) && (LLVoiceClient::getInstance()->isOnlineSIP(other_participant_id)))
-    //{
-    //  // User is online through the OOW connector, but not with a regular viewer.  Try to send the message via SLVoice.
-    //  sent = LLVoiceClient::getInstance()->sendTextMessage(other_participant_id, utf8_text);
-    //}
 
     if(!sent)
     {
@@ -3403,8 +3396,7 @@ void LLIncomingCallDialog::processCallResponse(S32 response, const LLSD &payload
     {
         if (type == IM_SESSION_P2P_INVITE)
         {
-            // decline p2p voice, either via the vivox-style call mechanism
-            // or via the webrtc-style "decline p2p" mechanism.
+            // decline p2p voice, via the webrtc-style "decline p2p" mechanism.
             LLVoiceP2PIncomingCallInterfacePtr call = LLVoiceClient::getInstance()->getIncomingCallInterface(payload["voice_channel_info"]);
             if (call)
             {
@@ -3666,8 +3658,9 @@ void LLIMMgr::addMessage(
                 return;
             }
 
-            // Fetch group chat history, enabled by default.
-            if (gSavedPerAccountSettings.getBOOL("FetchGroupChatHistory"))
+            // Fetch group chat or ad-hoc history, enabled by default.
+            static LLCachedControl<bool> fetch_chat_history(gSavedPerAccountSettings, "FetchGroupChatHistory", true);
+            if (fetch_chat_history && !session->isP2PSessionType())
             {
                 std::string chat_url = gAgent.getRegionCapability("ChatSessionRequest");
                 if (!chat_url.empty())
@@ -4903,8 +4896,9 @@ public:
                 {
                     //im_floater->processSessionUpdate(body["session_info"]); // <FS:Ansariel> Method does nothing
 
-                    // Send request for chat history, if enabled.
-                    if (gSavedPerAccountSettings.getBOOL("FetchGroupChatHistory"))
+                    // Send request for chat history, if enabled. Skip for peer-to-peer IMs.
+                    static LLCachedControl<bool> fetch_chat_history(gSavedPerAccountSettings, "FetchGroupChatHistory", true);
+                    if (fetch_chat_history && !im_floater->isP2PSessionType())
                     {
                         std::string url = gAgent.getRegionCapability("ChatSessionRequest");
                         if (!url.empty())

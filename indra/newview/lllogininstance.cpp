@@ -96,6 +96,8 @@ LLLoginInstance::LLLoginInstance() :
     mDispatcher.add("connect",    "", boost::bind(&LLLoginInstance::handleLoginSuccess, this, _1));
     mDispatcher.add("disconnect", "", boost::bind(&LLLoginInstance::handleDisconnect, this, _1));
     mDispatcher.add("indeterminate", "", boost::bind(&LLLoginInstance::handleIndeterminate, this, _1));
+    // Todo, implement "authenticating"?
+    mDispatcher.add("authenticating", "", boost::bind(&LLLoginInstance::handleIndeterminate, this, _1));
 }
 
 void LLLoginInstance::setPlatformInfo(const std::string platform,
@@ -134,10 +136,22 @@ void LLLoginInstance::reconnect()
 {
     // Sort of like connect, only using the pre-existing
     // request params.
+    mAttemptComplete = false;
     std::vector<std::string> uris;
     LLGridManager::getInstance()->getLoginURIs(uris);
+    // <FS:Beq> Leave the existing request available for a later retry if no endpoint is available.
+    if (uris.empty())
+    {
+        LL_WARNS("LLLogin") << "Failed to get login URIs during reconnect. No reconnect attempted." << LL_ENDL;
+        return;
+    }
+    // </FS:Beq>
     mLoginModule->connect(uris.front(), mRequestData);
-    gViewerWindow->setShowProgress(true,!gSavedSettings.getBOOL("FSDisableLoginScreens"));
+    // <FS:Beq> Guard reconnect progress updates when no viewer window exists.
+    // gViewerWindow->setShowProgress(true,!gSavedSettings.getBOOL("FSDisableLoginScreens"));
+    if (gViewerWindow)
+        gViewerWindow->setShowProgress(true,!gSavedSettings.getBOOL("FSDisableLoginScreens"));
+    // </FS:Beq>
 }
 
 void LLLoginInstance::disconnect()

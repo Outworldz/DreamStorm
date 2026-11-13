@@ -149,8 +149,6 @@ static bool rlvParseGetStatusOption(const std::string& strOption, std::string& s
 // Checked: 2010-04-07 (RLVa-1.2.0d) | Modified: RLVa-1.0.1d
 RlvHandler::RlvHandler() : m_fCanCancelTp(true), m_posSitSource(), m_pGCTimer(NULL)
 {
-    gAgent.addListener(this, "new group");
-
     // Array auto-initialization to 0 is still not supported in VS2013
     memset(m_Behaviours, 0, sizeof(S16) * RLV_BHVR_COUNT);
 }
@@ -1556,6 +1554,8 @@ bool RlvHandler::setEnabled(bool fEnable)
         RLV_INFOS << "Enabling Restrained Love API support - " << RlvStrings::getVersionAbout() << RLV_ENDL;
         m_fEnabled = true;
 
+        gAgent.addListener(RlvHandler::getInstance(), "new group");
+
         // Initialize static classes
         RlvSettings::initClass();
         RlvStrings::initClass();
@@ -2416,11 +2416,13 @@ void RlvBehaviourModifierHandler<RLV_MODIFIER_SETCAM_TEXTURE>::onValueChange() c
             RLV_INFOS << "Toggling diffuse textures for @setcam_textures" << RLV_ENDL;
             LLViewerFetchedTexture::sDefaultDiffuseImagep = LLViewerTextureManager::getFetchedTexture(pBhvrModifier->getValue<LLUUID>(), FTT_DEFAULT, MIPMAP_YES, LLGLTexture::BOOST_NONE, LLViewerTexture::LOD_TEXTURE);
             gObjectList.setAllObjectDefaultTextures(LLRender::DIFFUSE_MAP, true);
+            gObjectList.setAllObjectPBRDefaultTextures(pBhvrModifier->getValue<LLUUID>(), true);
         }
         else
         {
             RLV_INFOS << "Restoring diffuse textures for @setcam_textures" << RLV_ENDL;
             gObjectList.setAllObjectDefaultTextures(LLRender::DIFFUSE_MAP, false);
+            gObjectList.setAllObjectPBRDefaultTextures(LLUUID::null, false);
             LLViewerFetchedTexture::sDefaultDiffuseImagep = nullptr;
         }
     }
@@ -2494,7 +2496,7 @@ void RlvBehaviourToggleHandler<RLV_BHVR_SETDEBUG>::onCommandToggle(ERlvBehaviour
 template<> template<>
 void RlvBehaviourToggleHandler<RLV_BHVR_SETENV>::onCommandToggle(ERlvBehaviour eBhvr, bool fHasBhvr)
 {
-    const std::string strEnvFloaters[] = { "env_adjust_snapshot", "env_edit_extdaycycle", "env_fixed_environmentent_sky", "env_fixed_environmentent_water", "my_environments" };
+    const std::string strEnvFloaters[] = { "env_adjust_snapshot", "env_edit_extdaycycle", "env_fixed_environmentent_sky", "fs_env_fixed_environmentent_sky", "env_fixed_environmentent_water", "fs_env_fixed_environmentent_water", "my_environments" };
     for (int idxFloater = 0, cntFloater = sizeof(strEnvFloaters) / sizeof(std::string); idxFloater < cntFloater; idxFloater++)
     {
         if (fHasBhvr)

@@ -108,6 +108,13 @@ public:
     static void         initClass(); // Initialize data that's only init'd once per class.
     static void         cleanupClass(); // Cleanup data that's only init'd once per class.
     static void initCloud();
+    // <FS:TP> [FIRE-36987] Selectable avatar loading/bakefail cloud color
+    // Applies the FSCloudColorStart/FSCloudColorEnd settings to sCloud's
+    // particle colors. Safe to call anytime after initCloud() - takes
+    // effect on the very next idle tick for any avatar currently showing
+    // as a cloud, no restart required.
+    static void applyCloudColor();
+    // </FS:TP>
     virtual void        initInstance(); // Called after construction to initialize the class.
 
 protected:
@@ -267,7 +274,7 @@ public:
 
 
 private: //aligned members
-    LL_ALIGN_16(LLVector4a  mImpostorExtents[2]);
+    LLVector4a  mImpostorExtents[2];
 
     //--------------------------------------------------------------------
     // Updates
@@ -311,15 +318,17 @@ public:
                                                      const F32 max_attachment_complexity,
                                                      LLVOVolume::texture_cost_t& textures,
                                                      U32& cost,
-                                                     hud_complexity_list_t& hud_complexity_list,
-                                                     object_complexity_list_t& object_complexity_list,
-                                                     // <FS:Ansariel> Show per-item complexity in COF
-                                                     std::map<LLUUID, U32>& item_complexity,
-                                                     std::map<LLUUID, U32>& temp_item_complexity);
-                                                     // </FS:Ansariel>
+                                                     U32& visible_triangle_count,
+                                                     F32& est_triangle_count,
+                                                     F32& surface_area,
+                                                     LLHUDComplexity& hud_object_complexity,
+                                                     LLObjectComplexity& object_complexity);
     void            calculateUpdateRenderComplexity();
     static const U32 VISUAL_COMPLEXITY_UNKNOWN;
     void            updateVisualComplexity();
+    // Mark that an attachment needs complexity recalculation
+    void markAttachmentComplexityDirty(const LLUUID& object_id, bool force_reset_attachment = false);
+    void markBodyPartsComplexityDirty();
 
     void placeProfileQuery();
     void readProfileQuery(S32 retries);
@@ -385,6 +394,13 @@ public:
     static bool     sJointDebug; // output total number of joints being touched for each avatar
 
     static LLPartSysData sCloud;
+
+    // <FS:TP> [FIRE-36987] track the signal connections so initCloud() can
+    // disconnect and reconnect cleanly if it runs more than once (there is
+    // a menu option to reload the particle cloud)
+    static boost::signals2::connection sCloudColorStartConnection;
+    static boost::signals2::connection sCloudColorEndConnection;
+    // </FS:TP>
 
     static LLPointer<LLViewerTexture>  sCloudTexture;
 
@@ -603,12 +619,6 @@ private:
     // CPU render time in ms
     F32 mCPURenderTime = 0.f;
 
-    // the isTooComplex method uses these mutable values to avoid recalculating too frequently
-    // DEPRECATED -- obsolete avatar render cost values
-    mutable U32  mVisualComplexity;
-    mutable bool mVisualComplexityStale;
-    U32          mReportedVisualComplexity; // from other viewers through the simulator
-
     mutable bool        mCachedInMuteList;
     mutable F64         mCachedMuteListUpdateTime;
     mutable bool        mCachedInBuddyList = false;
@@ -619,6 +629,85 @@ private:
 // [/RLVa:KB]
 
     VisualMuteSettings      mVisuallyMuteSetting;           // Always or never visually mute this AV
+
+    //--------------------------------------------------------------------
+    // Complexity calculation and caching
+    //--------------------------------------------------------------------
+
+private:
+    // Structure to cache complexity metrics for individual attachments or components
+    struct ComplexityComponent
+    {
+        U32 render_cost;
+        U32 triangle_count;
+        F32 surface_area;
+        F32 est_triangle_count;
+        LLVOVolume::texture_cost_t textures;
+        F64 last_update_time;
+        bool needs_update;
+
+        // For tracking HUD and object lists
+        LLHUDComplexity hud_complexity;
+        LLObjectComplexity object_complexity;
+
+        ComplexityComponent()
+            : render_cost(0)
+            , triangle_count(0)
+            , surface_area(0.f)
+            , est_triangle_count(0.f)
+            , last_update_time(0.0)
+            , needs_update(true)
+        {
+        }
+
+        void reset()
+        {
+            render_cost = 0;
+            triangle_count = 0;
+            surface_area = 0.f;
+            est_triangle_count = 0.f;
+            textures.clear();
+            hud_complexity.reset();
+            object_complexity.reset();
+            needs_update = true;
+        }
+    };
+
+    void calculateAttachmentComplexity(LLViewerObject* attached_object,
+        const F32 max_attachment_complexity,
+        ComplexityComponent& cache);
+    void calculateBodyPartsComplexity(ComplexityComponent& cache);
+    U32 calculateBodyPartsComplexity();
+
+    // return true, if a valid control avatar.
+    bool calculateControlAvatarComplexity(ComplexityComponent& cache, const F32 max_attachment_complexity);
+
+    void accumulateComplexityComponent(const ComplexityComponent& component,
+        U32& total_cost,
+        hud_complexity_list_t& hud_list,
+        object_complexity_list_t& object_list);
+
+    bool shouldUpdateComplexityComponent(const ComplexityComponent& component) const;
+    void performPartialComplexityUpdate(const F32 max_attachment_complexity);
+
+    // <FS:Ansariel> Show per-item complexity in COF
+    //void processComplexityCostChange(const hud_complexity_list_t &hud_complexity_list, const object_complexity_list_t &object_complexity_list);
+    void processComplexityCostChange(const hud_complexity_list_t& hud_complexity_list, const object_complexity_list_t& object_complexity_list,
+        const std::map<LLUUID, U32>& item_complexity, const std::map<LLUUID, U32>& temp_item_complexity, U32 body_parts_complexity);
+    // </FS:Ansariel>
+
+    // Todo: probably safe to store by local instead of global id
+    // since they should be unique to this avatar, but local id might be not known.
+    typedef std::map<LLUUID, ComplexityComponent> complexity_cache_map_t;
+    complexity_cache_map_t mComplexityCache; // Cache per-attachment complexity
+    ComplexityComponent mBodyPartsComplexity; // Cache for body parts (mesh, eyes, hair, etc)
+    ComplexityComponent mControlAvatarComplexity; // Cache for animated object control avatar
+
+    // the isTooComplex method uses these mutable values to avoid recalculating too frequently
+    // DEPRECATED -- obsolete avatar render cost values
+    mutable U32  mVisualComplexity;
+    mutable bool mVisualComplexityStale;
+    U32          mReportedVisualComplexity; // from other viewers through the simulator
 
     //--------------------------------------------------------------------
     // animated object status
@@ -650,7 +739,6 @@ public:
 protected:
     void        updateVisibility();
 private:
-    F32         mVisibilityPreference;
     U32         mVisibilityRank;
     bool        mVisible;
 
@@ -658,7 +746,6 @@ private:
     // Shadowing
     //--------------------------------------------------------------------
 public:
-    void        updateShadowFaces();
     LLDrawable* mShadow;
 private:
     LLFace*     mShadow0Facep;
@@ -703,8 +790,6 @@ private:
     LLVector3   mLastAnimExtents[2];
     LLVector3   mLastAnimBasePos;
 
-    LLCachedControl<bool> mRenderUnloadedAvatar;
-
     //--------------------------------------------------------------------
     // Wind rippling in clothes
     //--------------------------------------------------------------------
@@ -723,10 +808,13 @@ private:
     // Culling
     //--------------------------------------------------------------------
 public:
+    static void setCullNeedsUpdate() { sAvatarCullNeedsUpdate = true; }
     static void cullAvatarsByPixelArea();
     bool        isCulled() const { return mCulled; }
 private:
     bool        mCulled;
+    static bool sAvatarCullNeedsUpdate;
+    static F64  sLastCullUpdateTime; // Time of last cull update
 
     //--------------------------------------------------------------------
     // Constants
@@ -909,9 +997,26 @@ protected:
  **                    APPEARANCE
  **/
 
+public:
+    // Used when an AvatarAppearance UDP message is received before the
+    // corresponding avatar could be created.
+    static void registerEarlyAppearance(const LLUUID& av_id)
+    {
+        sEarlyAppearanceList.emplace(av_id);
+    }
+
+    // Entries left behind by agents who never get instantiated (e.g. an
+    // AvatarAppearance message arrives for an avatar we never rez) are a
+    // small resource leak. Teleporting to another region invalidates the
+    // whole list, since it was only ever relevant to avatars in the region
+    // we're leaving, so clear it out at that point to bound the leak.
+    static void resetEarlyAppearanceList()
+    {
+        sEarlyAppearanceList.clear();
+    }
+
     LLPointer<LLAppearanceMessageContents>  mLastProcessedAppearance;
 
-public:
     void            parseAppearanceMessage(LLMessageSystem* mesgsys, LLAppearanceMessageContents& msg);
     void            processAvatarAppearance(LLMessageSystem* mesgsys);
     void            applyParsedAppearanceMessage(LLAppearanceMessageContents& contents, bool slam_params);
@@ -954,6 +1059,8 @@ private:
     bool            mUseLocalAppearance; // flag for if we're using a local composite
     // <FS:Ansariel> [Legacy Bake]
     bool            mUseServerBakes; // flag for if baked textures should be fetched from baking service (false if they're temporary uploads)
+
+    static uuid_list_t  sEarlyAppearanceList;
 
     //--------------------------------------------------------------------
     // Visibility
@@ -1069,8 +1176,8 @@ public:
     // <FS:Ansariel> Get typing status
     bool            isTyping() const { return mTyping; }
 private:
-    bool            mVisibleChat;
-    bool            mVisibleTyping;
+    bool            mVisibleChat = false;
+    bool            mVisibleTyping = false;
 
     //--------------------------------------------------------------------
     // Lip synch morphs
@@ -1166,6 +1273,7 @@ protected:
     static void     getAnimNames(std::vector<std::string>* names);
 private:
     bool            mNameIsSet;
+    bool            mNameIsTemporary; // <FS:TJ/> Re-request names if any are temporary/placeholder names such as (???).(???)
     LLSD            mClientTagData;
     bool            mHasClientTagColor;
     std::string     mTitle;
@@ -1268,11 +1376,12 @@ public:
     static F32          sGreyUpdateTime; // Last time stats were updated (to prevent multiple updates per frame)
 protected:
     S32                 getUnbakedPixelAreaRank();
-    bool                mHasGrey;
+    bool                mHasGrey = false;
 private:
     F32                 mMinPixelArea;
     F32                 mMaxPixelArea;
-    F32                 mAdjustedPixelArea;
+    F32                 mAdjustedPixelArea = 0.f;
+    F32                 mLastCulledPixelArea = -1.f; // Pixel area when last culled, for tracking significant changes
     std::string         mDebugText;
     std::string         mBakedTextureDebugText;
 

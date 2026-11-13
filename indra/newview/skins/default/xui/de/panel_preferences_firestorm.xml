@@ -42,6 +42,17 @@
 		<slider label="Überblendzeit für Umgebungseinstellungen:" tool_tip="Intervall in Sekunden in dem Änderungen an den Umgebungseinstellungen ineinander überblenden. 0 = direkt ohne Verzögerung" name="manual_environment_change_transition_period"/>
 		<check_box name="EnvironmentPersistAcrossLogin" label="Sitzungsübergreifende Umgebungseinstellungen aktivieren" tool_tip="Stellt die aktuellen Umgebungseinstellungen nach einem erneuten Login wieder her."/>
 		<check_box name="FSRepeatedEnvTogglesShared" label="Tastenkombinationen für Umgebungseinstellungen sind An-Aus-Schalter" tool_tip="Wiederholtes Drücken von Tastenkombinationen schaltet zwischen der gewünschten Einstellung und gemeinsamer Umgebung um."/>
+		<text name="FSCloudColorLabel">
+			Avatar-Wolke beim Laden/Fehler beim Backen:
+		</text>
+		<text name="FSCloudColorStartLabel">
+			Start:
+		</text>
+		<text name="FSCloudColorEndLabel">
+			Ende:
+		</text>
+		<color_swatch name="FSCloudColorStart" tool_tip="Start-Farbe der Partikelwolke während ein Avatar geladen wird oder im Falle eines Fehlers beim Backen. Tritt sofort in Kraft, kein Neustart benötigt."/>
+		<color_swatch name="FSCloudColorEnd" tool_tip="End-Farbe der Partikelwolke während ein Avatar geladen wird oder im Falle eines Fehlers beim Backen. Tritt sofort in Kraft, kein Neustart benötigt."/>
 	</panel>
 
 	<!--Protection-->
@@ -175,11 +186,14 @@
 			Aktuell gesetzt: [ITEM]
 		</text>
 		<check_box name="FSBuildPrefs_UseCustomScript" label="Benutzerdef. Skript für Button „Neues Skript“"/>
-		<fs_embedded_item_drop_target name="custom_script" tool_tip="Skript aus Inventar hier hinziehen und ablegen.">
-			Skript hier ablegen.
+		<fs_embedded_item_drop_target name="custom_script" tool_tip="LSL- oder Lua-Skript aus Inventar hier hinziehen und ablegen.">
+			LSL- oder Lua-Skript hier ablegen.
 		</fs_embedded_item_drop_target>
 		<text name="custom_script_disp_rect_txt">
-			Aktuell gesetzt: [SCRIPT]
+			LSL-Skript: [SCRIPT]
+		</text>
+		<text name="custom_lua_script_disp_rect_txt">
+			Lua-Skript: [SCRIPT]
 		</text>
 		<button label="Standard-Erstellungsberechtigungen" name="fs_default_creation_permissions"/>
 		<check_box label="Ausgewählte Primitive hervorheben" tool_tip="Deaktivieren, um die gelben und blauen Grundrisse nicht anzuzeigen. Verbessert die Performanz, wenn eine Vielzahl an Primitiven ausgewählt wird." name="FSBuildPrefsRenderHighlight_toggle"/>
@@ -222,21 +236,38 @@
 		<check_box label="Erweiterte Skript-Informationen aktivieren" tool_tip="Falls aktiviert, werden die Skript-Informationen um weitergehende Details ergänzt." name="FSScriptInfoExtended"/>
 		<check_box label="Anhänge-Punkte in „Anhängen an“-Menüs alphabetisch sortieren (Erfordert Neustart)" tool_tip="Falls aktiviert, werden die Einträge in den „Anhängen an“-Menüs alphabetisch sortiert." name="FSSortAttachmentSpotsAlphabetically"/>
 		<check_box label="Neues [APP_NAME] Textur-Panel im Werkzeug-Fenster verwenden (Erforder Neustart)" tool_tip="Falls aktiviert, werden die Werkzeuge zum Bearbeiten von Texturen den von [APP_NAME] verbesserten Workflow benutzen und gleichzeitiges Bearbeiten von Blinn-Phong- und PBR-Texturen erlauben." name="FSUseNewTexturePanel"/>
+		<text name="buildaxiscolors_label">
+			Aussehen X/Y/Z-Achsen:
+		</text>
+		<color_swatch label="X-Achse" name="colorswatchXaxis" tool_tip="Klicken, um Farbauswahl zu öffnen"/>
+		<color_swatch label="Y-Achse" name="colorswatchYaxis" tool_tip="Klicken, um Farbauswahl zu öffnen"/>
+		<color_swatch label="Z-Achse" name="colorswatchZaxis" tool_tip="Klicken, um Farbauswahl zu öffnen"/>
+		<color_swatch label="Text-HG" name="colorswatchEditTextBackgroundColor" tool_tip="Klicken, um Farbauswahl zu öffnen"/>
+		<spinner label="Skalierung" name="editWidgetScaling" tool_tip="Skaliert die Größe der Kontrollen für das Editieren von Rotation/Skalierung/Position."/>
+		<check_box label="Text-Schattierung" tool_tip="Falls aktiviert, wird dem Hinweistext beim Editieren eine Hintergrund-Schattierung hinzugefügt." name="editTextDropShadow"/>
 	</panel>
 
 	<panel label="Script Editor" name="BuildTabScriptEditor">
 		<text name="text_box_scripting_font" width="140">
 			Schrift für Skript-Editor:
 		</text>
+		<text name="text_box_scripting_font_size" width="40">
+			Größe:
+		</text>
+		<check_box label="WebSocket-Synchronisierung aktivieren" name="websocket_sync_enable"/>
+		<text name="websocket_tip">
+			WebSocket Listen-Port:
+		</text>
+		<check_box label="Skriptfehler und Debug-Meldungen an WebSocket-Clients weiterleiten" name="websocket_forward_debug"/>
 		<combo_box name="FSScriptingFontName" tool_tip="Name der Schrift, die für den Skript-Editor verwendet wird">
 			<combo_item name="Monospace" label="Monospace"/>
 			<combo_item name="Scripting" label="Scripting"/>
 			<combo_item name="Cascadia" label="Cascadia Code"/>
 		</combo_box>
 		<combo_box name="FSScriptingFontSize" tool_tip="Größe der Schrift, die für den Skript-Editor verwendet wird">
-			<combo_item name="Monospace" label="Monospace"/>
-			<combo_item name="Scripting" label="Scripting"/>
-			<combo_item name="Cascadia" label="Cascadia Code"/>
+			<combo_item name="Monospace" label="Monospace Standard"/>
+			<combo_item name="Scripting" label="Scripting Standard"/>
+			<combo_item name="Cascadia" label="Cascadia Code Standard"/>
 			<combo_item name="Small" label="Klein"/>
 			<combo_item name="Medium" label="Mittel"/>
 			<combo_item name="Large" label="Groß"/>
@@ -255,6 +286,7 @@
 			Externer Editor:
 		</text>
 		<button label="Durchsuchen" label_selected="Durchsuchen" name="SetExternalEditor"/>
+		<check_box label="Enge VS Code Integration" name="tight_integration"/>
 	</panel>
 
 	<!--Uploads-->

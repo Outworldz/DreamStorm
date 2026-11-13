@@ -78,6 +78,8 @@ void initMainLoop();
 void cleanupViewer();
 void handleUrl(const char* url);
 void dispatchUrl(std::string url);
+void startWatchdog(std::string_view state);
+void stopWatchdog();
 
 /* Defined in llwindowmacosx-objc.mm: */
 int createNSApp(int argc, const char **argv);
@@ -139,6 +141,7 @@ void callLeftMouseDown(float *pos, unsigned int mask);
 void callLeftMouseUp(float *pos, unsigned int mask);
 void callDoubleClick(float *pos, unsigned int mask);
 void callResize(unsigned int width, unsigned int height);
+void callRequestResolutionUpdate();
 void callMouseMoved(float *pos, unsigned int mask);
 void callMouseDragged(float *pos, unsigned int mask);
 void callScrollMoved(float deltaX, float deltaY);
@@ -156,6 +159,7 @@ void callFocusLost();
 void callModifier(unsigned int mask);
 void callQuitHandler();
 void commitCurrentPreedit(GLViewRef glView);
+bool windowCallbacksReady();
 
 #include <string>
 void callHandleDragEntered(std::string url);

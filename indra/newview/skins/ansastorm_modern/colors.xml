@@ -23,6 +23,9 @@
 	 name="EmphasisColor"
 	 value="0.3 0.82 1 1" />
 	<color
+	 name="EmphasisColor_60"
+	 value="0.3 0.82 1 0.6" />
+	<color
 	 name="EmphasisColor_35"
 	 value="0.426 0.729 1.0 0.368" />
     <color
@@ -148,7 +151,7 @@
 	value="1 .85 .73 1" />
 	<color
       name="LtRed"
-      value="1 0.2 0.2 1" />
+      value="1 0.703 0.703 1" />
 
   <!-- Skin and Theme Colors -->
 
@@ -304,10 +307,6 @@
 	 <color
 	 name="AnsaStorm_HtmlLink_QueryPart"
 	 value="0.463 0.729 0.826 1" />
-
-	<color
-	 name="AvatarListForegroundRed"
-	 value="1 0.703 0.703 1" />
 
 	 <!-- END AnsaStorm Definitions -->
 
@@ -483,10 +482,10 @@
      reference="Yellow" />
     <color
      name="AvatarListItemBeyondShoutRange"
-     reference="AvatarListForegroundRed" />
+     reference="LtRed" />
     <color
      name="AvatarListItemAgeAlert"
-     reference="AvatarListForegroundRed" />
+     reference="LtRed" />
     <color
      name="BackgroundChatColor"
      reference="DkGray" />
@@ -501,7 +500,7 @@
      reference="EmphasisColor" />
     <color
      name="ButtonFlashBgColor"
-     reference="White_25" />
+     reference="EmphasisColor_60" />
 <!-- Color Changed -->
     <color
      name="ButtonImageColor"
@@ -1055,7 +1054,7 @@
      reference="SL-TitaniumGray" />
     <color
      name="ScriptErrorColor"
-     reference="Red" />
+     reference="LtRed" />
     <color
      name="ScrollBGStripeColor"
      reference="White_10" />
@@ -1134,7 +1133,7 @@
      reference="White" />
     <color
      name="TextBgReadOnlyColor"
-	 reference="DkGray" />
+     reference="DkGray_66" />
     <color
      name="TextBgWriteableColor"
      reference="LtGray" />

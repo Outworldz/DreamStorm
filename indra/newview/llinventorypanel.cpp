@@ -4,7 +4,7 @@
  *
  * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * Copyright (C) 2010, Linden Research, Inc.
+ * Copyright (C) 2026, Linden Research, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -211,7 +211,6 @@ LLFolderView * LLInventoryPanel::createFolderRoot(LLUUID root_id )
     p.title = getLabel();
     p.rect = LLRect(0, 0, getRect().getWidth(), 0);
     p.parent_panel = this;
-    p.tool_tip = p.name;
     p.listener = mInvFVBridgeBuilder->createBridge( LLAssetType::AT_CATEGORY,
                                                                     LLAssetType::AT_CATEGORY,
                                                                     LLInventoryType::IT_CATEGORY,
@@ -649,8 +648,9 @@ void LLInventoryPanel::itemChanged(const LLUUID& item_id, U32 mask, const LLInve
             LLInvFVBridge* bridge = (LLInvFVBridge*)view_item->getViewModelItem();
             if(bridge)
             {
-                // Clear the display name first, so it gets properly re-built during refresh()
-                bridge->clearDisplayName();
+                // Clear the searchable name first, so it gets
+                // properly re-built during refresh()
+                bridge->clearSearchableName();
 
                 view_item->refresh();
             }
@@ -670,8 +670,8 @@ void LLInventoryPanel::itemChanged(const LLUUID& item_id, U32 mask, const LLInve
         if (model_item && view_item && viewmodel_item)
         {
             const LLUUID idp = viewmodel_item->getUUID();
-            view_item->destroyView();
             removeItemID(idp);
+            view_item->destroyView();
         }
 
         LLInventoryObject const* objectp = mInventory->getObject(item_id);
@@ -777,6 +777,7 @@ void LLInventoryPanel::itemChanged(const LLUUID& item_id, U32 mask, const LLInve
                 LLFolderViewModelItem* old_parent_vmi = old_parent->getViewModelItem();
                 LLFolderViewModelItemInventory* viewmodel_folder = static_cast<LLFolderViewModelItemInventory*>(old_parent_vmi);
                 LLFolderViewFolder* new_parent = getFolderByID(model_item->getParentUUID());
+                const bool was_favorite = view_item->isFavorite();
 
                 if (old_parent != new_parent // Item has been moved.
                     && (new_parent != NULL || !isInRootContent(item_id, view_item)) // item is not or shouldn't be in root content
@@ -816,7 +817,7 @@ void LLInventoryPanel::itemChanged(const LLUUID& item_id, U32 mask, const LLInve
                         old_parent_vmi->dirtyDescendantsFilter();
                     }
 
-                    if (view_item->isFavorite())
+                    if (was_favorite)
                     {
                         if (old_parent)
                         {
@@ -1122,19 +1123,75 @@ void LLInventoryPanel::initRootContent()
         // Default case: always add "My Inventory" root first, "Library" root second
         // If we run out of time, this still should create root folders
         buildNewViews(gInventory.getRootFolderID());        // My Inventory
-        buildNewViews(gInventory.getLibraryRootFolderID()); // Library
+        // <FS:TP> [FIRE-34881] Library root is now optional, toggled from the
+        // inventory gear menu, instead of being permanently disabled
+        //   buildNewViews(gInventory.getLibraryRootFolderID()); // Library
+        if (gSavedSettings.getBOOL("FSShowLibraryFolder"))
+        {
+            buildNewViews(gInventory.getLibraryRootFolderID()); // Library
+        }
+        // </FS:TP>
     }
 }
 
+// <FS:TP> [FIRE-34881] Build or tear down the Library root view live, without a restart.
+// Only touches this panel's folder VIEW - the underlying gInventory data for
+// Library stays loaded regardless, since other systems (default attachments,
+// outfit lookups, etc.) depend on being able to resolve the Library folder ID.
+void LLInventoryPanel::setLibraryFolderVisible(bool visible)
+{
+    const LLUUID library_id = gInventory.getLibraryRootFolderID();
+    if (library_id.isNull())
+    {
+        return;
+    }
+
+    LLFolderViewItem* library_view = getItemByID(library_id);
+    if (visible)
+    {
+        if (!library_view)
+        {
+            buildNewViews(library_id);
+            // New folder views are added invisible with no rearrange request
+            // (LLFolderViewFolder::addFolder() has that call commented out,
+            // see addItem()/addFolder() in llfolderviewitem.cpp) - without
+            // this, the folder exists in the model but never actually draws.
+            mFolderRoot.get()->arrangeAll();
+        }
+    }
+    else
+    {
+        if (library_view)
+        {
+            // Same pattern used elsewhere in this file to tear down a folder's
+            // view: drop it from the item map, then destroy the UI element.
+            // destroyView() -> extractItem() already calls requestArrange()
+            // internally, so no extra rearrange call is needed on this side.
+            removeItemID(library_id);
+            library_view->destroyView();
+        }
+    }
+}
+// </FS:TP>
 
 LLFolderViewFolder * LLInventoryPanel::createFolderViewFolder(LLInvFVBridge * bridge, bool allow_drop)
 {
     LLFolderViewFolder::Params params(mParams.folder);
 
-    params.name = bridge->getDisplayName();
+#ifndef LL_RELEASE_FOR_DOWNLOAD
+    // Only usable for debug and first call has a large
+    // overhead from search string construction.
+    // As inventory names aren't unique and can change,
+    // there is little we can use them for in release builds.
+    params.name = bridge->getName();
+#else
+    // We don't have a source of unique names and inventory
+    // items can reach millions in quantity, just use
+    // a short descriptor
+    params.name = "fld";
+#endif
     params.root = mFolderRoot.get();
     params.listener = bridge;
-    //  params.tool_tip = params.name; // <ND/> Don't bother with tooltips in inventory
     params.allow_drop = allow_drop;
 
     // <FS:Ansariel> Inventory specials
@@ -1158,12 +1215,23 @@ LLFolderViewItem * LLInventoryPanel::createFolderViewItem(LLInvFVBridge * bridge
 {
     LLFolderViewItem::Params params(mParams.item);
 
-    params.name = bridge->getDisplayName();
+#ifndef LL_RELEASE_FOR_DOWNLOAD
+    // Only usable for debug and first call has a large
+    // overhead from search string construction.
+    // As inventory names aren't unique, are large and can change,
+    // there is little we can use them for in release builds.
+    // Prefer shorter
+    params.name = bridge->getName();
+#else
+    // We don't have a source of unique names and inventory
+    // items can reach millions in quantity, just use
+    // a short descriptor
+    params.name = "itm";
+#endif
     params.creation_date = bridge->getCreationDate();
     params.root = mFolderRoot.get();
     params.listener = bridge;
     params.rect = LLRect (0, 0, 0, 0);
-    //  params.tool_tip = params.name; // <ND/> Don't bother with tooltips in inventory
 
     // <FS:Ansariel> Inventory specials
     //params.font_color = (bridge->isLibraryItem() ? sLibraryColor : sDefaultColor);
@@ -1593,14 +1661,16 @@ bool LLInventoryPanel::handleToolTip(S32 x, S32 y, MASK mask)
             LLUUID thumbnailUUID = vm_item_p->getThumbnailUUID();
             if (thumbnailUUID.isNull() && vm_item_p->getInventoryType() == LLInventoryType::IT_CATEGORY)
             {
-                LLViewerInventoryCategory* cat = static_cast<LLViewerInventoryCategory*>(vm_item_p->getInventoryObject());
+                LLInventoryObject* inv_object = vm_item_p->getInventoryObject();
+                LLViewerInventoryCategory* cat = inv_object ?
+                    gInventory.getCategory(inv_object->getLinkedUUID()) : nullptr;
                 if (cat && cat->getPreferredType() == LLFolderType::FT_OUTFIT)
                 {
                     LLInventoryModel::cat_array_t cats;
                     LLInventoryModel::item_array_t items;
                     // Not LLIsOfAssetType, because we allow links
                     LLIsTextureType f;
-                    gInventory.getDirectDescendentsOf(vm_item_p->getUUID(), cats, items, f);
+                    gInventory.getDirectDescendentsOf(cat->getUUID(), cats, items, f);
 
                     // Exactly one texture found => show the texture tooltip
                     if (1 == items.size())
@@ -1833,7 +1903,7 @@ void LLInventoryPanel::onSelectionChange(const std::deque<LLFolderViewItem*>& it
                     LLFolderBridge* prev_bridge = dynamic_cast<LLFolderBridge*>(prev_folder_item->getViewModelItem());
                     if(prev_bridge)
                     {
-                        prev_bridge->clearDisplayName();
+                        prev_bridge->clearSearchableName();
                         prev_bridge->setShowDescendantsCount(false);
                         prev_folder_item->refresh();
                     }
@@ -1842,7 +1912,7 @@ void LLInventoryPanel::onSelectionChange(const std::deque<LLFolderViewItem*>& it
                 LLFolderBridge* bridge = dynamic_cast<LLFolderBridge*>(folder_item->getViewModelItem());
                 if(bridge)
                 {
-                    bridge->clearDisplayName();
+                    bridge->clearSearchableName();
                     bridge->setShowDescendantsCount(true);
                     folder_item->refresh();
                     mPreviousSelectedFolder = bridge->getUUID();
@@ -1857,7 +1927,7 @@ void LLInventoryPanel::onSelectionChange(const std::deque<LLFolderViewItem*>& it
             LLFolderBridge* prev_bridge = dynamic_cast<LLFolderBridge*>(prev_folder_item->getViewModelItem());
             if(prev_bridge)
             {
-                prev_bridge->clearDisplayName();
+                prev_bridge->clearSearchableName();
                 prev_bridge->setShowDescendantsCount(false);
                 prev_folder_item->refresh();
             }
@@ -1877,7 +1947,7 @@ void LLInventoryPanel::updateFolderLabel(const LLUUID& folder_id)
         LLFolderBridge* bridge = dynamic_cast<LLFolderBridge*>(folder_item->getViewModelItem());
         if(bridge)
         {
-            bridge->clearDisplayName();
+            bridge->clearSearchableName();
             bridge->setShowDescendantsCount(true);
             folder_item->refresh();
         }

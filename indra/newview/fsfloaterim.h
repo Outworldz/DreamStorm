@@ -116,9 +116,9 @@ public:
     void processAgentListUpdates(const LLSD& body);
 
     void updateChatHistoryStyle();
-    static void processChatHistoryStyleUpdate(const LLSD& newvalue);
+    static void handleChatHistoryStyleChanged(const LLSD& newvalue);
 
-    static void clearAllOpenHistories();    // <FS:CR> FIRE-11734
+    static void processChatHistoryStyleUpdate(bool clean_messages = false);    // <FS:CR> FIRE-11734
 
     void onChatSearchButtonClicked();
 
@@ -156,7 +156,7 @@ public:
 
     void loadInitialInvitedIDs();
 
-    bool isP2PChat() const { return mIsP2PChat; }
+    bool isP2PSessionType() const { return mIsP2PChat; }
 
     void handleMinimized(bool minimized);
 
@@ -165,6 +165,8 @@ public:
     uuid_vec_t getSessionParticipants() const override;
 
     F32 onGetChatEditorOpacityCallback(ETypeTransparency type, F32 alpha);
+
+    LLUUID getSessionID() const { return mSessionID; }
 
 protected:
     void onClickCloseBtn(bool app_quitting = false) override;

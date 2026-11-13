@@ -1653,6 +1653,9 @@ https://secondlife.com/viewer-access-faq
 	<string name="FSInventoryCustomTabDefaultName">
 		カスタム
 	</string>
+	<string name="FSInventoryCustomTabShowHidden">
+		隠されたタブを表示
+	</string>
 	<string name="InventoryNoMatchingRecentItems">
 		お探しのものは見つかりましたか？[secondlife:///app/inventory/filters フィルタを表示]をお試しください。
 	</string>
@@ -1681,7 +1684,10 @@ https://secondlife.com/viewer-access-faq
 		一致するものはありませんでした。
 	</string>
 	<string name="InventoryNoTexture">
-		インベントリ内にこのテクスチャのコピーがありません
+		インベントリ内にこのテクスチャのコピーがありません。
+	</string>
+	<string name="InventoryNoMaterial">
+		インベントリ内にこのマテリアルのコピーがありません。
 	</string>
 	<string name="InventoryInboxNoItems">
 		マーケットプレイスで購入した商品はここに表示されます。その後、アイテムをインベントリにドラッグすれば、それらのアイテムを使用できます。
@@ -3179,7 +3185,7 @@ https://support.secondlife.com よりSecond Lifeのサポートまでお問い�
 	<string name="Play Media">
 		メディアの再生／一時停止
 	</string>
-	<string name="StreamtitleNowPlaying">再生中：</string>
+	<string name="StreamtitleNowPlaying">再生中： [TITLE]</string>
 	<!-- Drivers support/update pages -->
 	<string name="IntelDriverPage">https://www.intel.co.jp/content/www/jp/ja/support/detect.html</string>
 	<string name="NvidiaDriverPage">https://www.nvidia.com/Download/index.aspx?lang=ja-jp</string>
@@ -5638,9 +5644,6 @@ www.secondlife.com から最新バージョンをダウンロードしてくだ�
 	<string name="Command_Grid_Status_Label">
 		グリッド状況
 	</string>
-	<string name="Command_HowTo_Label">
-		ハウツー
-	</string>
 	<string name="Command_Inventory_Label">
 		インベントリ
 	</string>
@@ -5772,9 +5775,6 @@ www.secondlife.com から最新バージョンをダウンロードしてくだ�
 	</string>
 	<string name="Command_Grid_Status_Tooltip">
 		現在のグリッドステータスを表示します。
-	</string>
-	<string name="Command_HowTo_Tooltip">
-		一般的タスクの実行方法を表示します。
 	</string>
 	<string name="Command_Inventory_Tooltip">
 		インベントリの内容を表示したり使用したりします。
@@ -6604,4 +6604,7 @@ Rez時間：[OBJECT_REZ_TIME]
 	<string name="OmnifilterExportDescription">包括フィルタのルール設定：[REPLACEMENT]</string>	<!-- Note for translators: This goes into NC's description field, no special chars or diacritics -->
 	<string name="FSAvatarAlignToggleMini">最小</string>
 	<string name="FSAvatarAlignToggleFull">完全</string>
+
+	<!-- <FS:TJ> Launch new instance option from macOS dock> -->
+	<string name="FSMacOSNewViewerInstance">新しいビューアのインスタンス</string>
 </strings>

@@ -33,6 +33,7 @@
 #include "llaudioengine.h"
 #include "lllistener_openal.h"
 #include "llwindgen.h"
+#include "llatomic.h"
 
 class LLAudioEngine_OpenAL : public LLAudioEngine
 {
@@ -46,6 +47,7 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         virtual void allocateListener();
 
         virtual void shutdown();
+        virtual void idle();
 
         void setInternalGain(F32 gain);
 
@@ -55,6 +57,12 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         /*virtual*/ bool initWind();
         /*virtual*/ void cleanupWind();
         /*virtual*/ void updateWind(LLVector3 direction, F32 camera_altitude);
+
+        // <FS:Ansariel> Output device selection
+        virtual output_device_map_t getDevices();
+        virtual void setDevice(const LLUUID& device_uuid);
+        void changeDevice();
+        // </FS:Ansariel>
 
     private:
         typedef F32 WIND_SAMPLE_T;
@@ -68,6 +76,31 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
 
         static const int MAX_NUM_WIND_BUFFERS = 80;
         static const float WIND_BUFFER_SIZE_SEC; // 1/20th sec
+
+        ALCdevice* mALDevice;
+
+        bool mHasReopenExt;
+        LPALCREOPENDEVICESOFT mReopenDeviceSOFT;
+
+        bool mHasSystemEventsExt;
+        LPALCEVENTCONTROLSOFT mEventControlSOFT;
+        LPALCEVENTCALLBACKSOFT mEventCallbackSOFT;
+
+        // <FS:Ansariel> Output device selection
+        bool mHasEnumerateAllExt;
+
+        // Set by onDeviceEventSOFT(), consumed by idle()
+        LLAtomicBool mDefaultDeviceChanged;
+
+        static void ALC_APIENTRY onDeviceEventSOFT(ALCenum eventType, ALCenum deviceType,
+                                                     ALCdevice* device, ALCsizei length,
+                                                     const ALCchar* message, void* userParam) noexcept;
+        void reopenOnDefaultDevice();
+
+        // <FS:Ansariel> Output device selection
+        LLUUID mSelectedDeviceUUID{};
+        ALCcontext* mALContext{ nullptr };
+        // </FS:Ansariel>
 };
 
 class LLAudioChannelOpenAL : public LLAudioChannel

@@ -135,6 +135,10 @@ with the same filename but different name
   <texture name="Cam_Load_Pos" file_name="bottomtray/camera_load.png" preload="false" />
   <!-- END FS:Ansariel: FIRE-7758: 7758 -->
   
+  <texture name="Camera_Off" file_name="icons/Camera_Off.png" preload="false" />
+  <texture name="Camera_Over" file_name="icons/Camera_Over.png" preload="false" />
+  <texture name="Camera_Press" file_name="icons/Camera_Press.png" preload="false" />
+  
   <texture name="Checkbox_Off_Disabled" file_name="widgets/Checkbox_Disabled.png" preload="true" />
   <texture name="Checkbox_On_Disabled" file_name="widgets/Checkbox_On_Disabled.png" preload="true" />
   <texture name="Checkbox_Off" file_name="widgets/Checkbox_Off.png" preload="true" />
@@ -158,7 +162,6 @@ with the same filename but different name
   <texture name="Command_Flickr_Icon"       file_name="toolbar_icons/flickr.png"       preload="true" />
   <texture name="Command_Gestures_Icon"     file_name="toolbar_icons/gestures.png"     preload="true" />
   <texture name="Command_Grid_Status_Icon"  file_name="toolbar_icons/grid_status.png"  preload="true" />
-  <texture name="Command_HowTo_Icon"        file_name="toolbar_icons/howto.png"        preload="true" />
   <texture name="Command_Inventory_Icon"    file_name="toolbar_icons/inventory.png"    preload="true" />
   <texture name="Command_Map_Icon"          file_name="toolbar_icons/map.png"          preload="true" />
   <texture name="Command_Marketplace_Icon"  file_name="toolbar_icons/marketplace.png"  preload="true" />
@@ -370,6 +373,7 @@ with the same filename but different name
   <texture name="Inv_Object_Multi" file_name="icons/Inv_Object_Multi.png" preload="false" />
   <texture name="Inv_Pants" file_name="icons/Inv_Pants.png" preload="false" />
   <texture name="Inv_Script" file_name="icons/Inv_Script.png" preload="false" />
+  <texture name="Inv_Script_Luau" file_name="icons/Inv_Script_Luau.png" preload="false" />
   <texture name="Inv_Shirt" file_name="icons/Inv_Shirt.png" preload="false" />
   <texture name="Inv_Shoe" file_name="icons/Inv_Shoe.png" preload="false" />
   <texture name="Inv_Skin" file_name="icons/Inv_Skin.png" preload="false" />

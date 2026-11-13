@@ -459,7 +459,10 @@ bool LLWorldMap::insertRegion(U32 x_world, U32 y_world, U16 x_size, U16 y_size, 
     if (accesscode == 255)
     {
         // Checks if the track point is in it and invalidates it if it is
-        if (LLWorldMap::getInstance()->isTrackingInRectangle( x_world, y_world, x_world + REGION_WIDTH_UNITS, y_world + REGION_WIDTH_UNITS))
+        // <FS:TJ> Fix OpenSim tracking not working on first click in VarRegions
+        //if (LLWorldMap::getInstance()->isTrackingInRectangle( x_world, y_world, x_world + REGION_WIDTH_UNITS, y_world + REGION_WIDTH_UNITS))
+        if (LLWorldMap::getInstance()->isTrackingInRectangle(x_world, y_world, x_world + x_size, y_world + y_size))
+        // </FS:TJ>
         {
             LLWorldMap::getInstance()->setTrackingInvalid();
         }
@@ -487,7 +490,10 @@ bool LLWorldMap::insertRegion(U32 x_world, U32 y_world, U16 x_size, U16 y_size, 
 // </FS:CR> Aurora Sim
 
         // Handle the location tracking (for teleport, UI feedback and info display)
-        if (LLWorldMap::getInstance()->isTrackingInRectangle( x_world, y_world, x_world + REGION_WIDTH_UNITS, y_world + REGION_WIDTH_UNITS))
+        // <FS:TJ> Fix OpenSim tracking not working on first click in VarRegions
+        //if (LLWorldMap::getInstance()->isTrackingInRectangle( x_world, y_world, x_world + REGION_WIDTH_UNITS, y_world + REGION_WIDTH_UNITS))
+        if (LLWorldMap::getInstance()->isTrackingInRectangle(x_world, y_world, x_world + x_size, y_world + y_size))
+        // </FS:TJ>
         {
             if (siminfo->isDown())
             {
@@ -668,11 +674,33 @@ void LLWorldMap::dropImagePriorities()
 // Load all regions in a given rectangle (in region grid coordinates, i.e. world / 256 meters)
 void LLWorldMap::updateRegions(S32 x0, S32 y0, S32 x1, S32 y1)
 {
-    // Convert those boundaries to the corresponding (MAP_BLOCK_SIZE x MAP_BLOCK_SIZE) block coordinates
-    x0 = x0 / MAP_BLOCK_SIZE;
-    x1 = x1 / MAP_BLOCK_SIZE;
-    y0 = y0 / MAP_BLOCK_SIZE;
-    y1 = y1 / MAP_BLOCK_SIZE;
+    constexpr S32 MAX_REQUEST_REGIONS = 64; // Server side enforced limit.
+    // <FS:Beq> Respect the 64-region request limit with Firestorm cache block sizes.
+    // constexpr S32 REGIONS_PER_BLOCK = MAP_BLOCK_SIZE * MAP_BLOCK_SIZE; // 4 x 4 = 16 regions per block
+    // constexpr S32 MAX_TOTAL_BLOCKS = MAX_REQUEST_REGIONS / REGIONS_PER_BLOCK; // 64 / 16 = 4 blocks total
+    // constexpr S32 MAX_BLOCKS_PER_SIDE = MAX_TOTAL_BLOCKS; // Can have up to 4 blocks in one dimension (e.g., 4x1, 1x4, 2x2)
+    constexpr S32 REGIONS_PER_BLOCK = MAP_BLOCK_SIZE * MAP_BLOCK_SIZE;
+    // A Firestorm cache block can exceed the server's request limit. Keep
+    // tracking whole blocks, but split their requests into smaller rectangles.
+    constexpr S32 MAX_TOTAL_BLOCKS = REGIONS_PER_BLOCK > MAX_REQUEST_REGIONS
+        ? 1 : MAX_REQUEST_REGIONS / REGIONS_PER_BLOCK;
+    constexpr S32 MAX_BLOCKS_PER_SIDE = MAX_TOTAL_BLOCKS;
+    // </FS:Beq>
+
+    // Convert region coordinates to block coordinates
+    // We use fixed sized blocks for ease of storage and lookup,
+    // but the requests can be of variable size of up to
+    // MAX_REQUEST_REGIONS.
+    S32 block_x0 = x0 / MAP_BLOCK_SIZE;
+    S32 block_x1 = x1 / MAP_BLOCK_SIZE;
+    S32 block_y0 = y0 / MAP_BLOCK_SIZE;
+    S32 block_y1 = y1 / MAP_BLOCK_SIZE;
+
+    // Clamp to valid range
+    block_x0 = llmax(block_x0, 0);
+    block_x1 = llmin(block_x1, MAP_BLOCK_RES - 1);
+    block_y0 = llmax(block_y0, 0);
+    block_y1 = llmin(block_y1, MAP_BLOCK_RES - 1);
 
     // <FS:Ansariel> Periodically update sim info
     block_last_update_map_t new_offsets;
@@ -690,10 +718,10 @@ void LLWorldMap::updateRegions(S32 x0, S32 y0, S32 x1, S32 y1)
     mMapBlockLastUpdateOffsets.swap(new_offsets);
     // </FS:Ansariel>
 
-    // Load the region info those blocks
-    for (S32 block_x = llmax(x0, 0); block_x <= llmin(x1, MAP_BLOCK_RES-1); ++block_x)
+    // Process blocks, grouping unloaded blocks into larger requests up to MAX_TOTAL_BLOCKS
+    for (S32 block_y = block_y0; block_y <= block_y1; )
     {
-        for (S32 block_y = llmax(y0, 0); block_y <= llmin(y1, MAP_BLOCK_RES-1); ++block_y)
+        for (S32 block_x = block_x0; block_x <= block_x1; )
         {
             S32 offset = block_x | (block_y * MAP_BLOCK_RES);
             // <FS:Ansariel> Periodically update sim info
@@ -701,13 +729,90 @@ void LLWorldMap::updateRegions(S32 x0, S32 y0, S32 x1, S32 y1)
             if (!mMapBlockLoaded[offset] || mMapBlockLastUpdateOffsets.find(offset) == mMapBlockLastUpdateOffsets.end())
             // </FS:Ansariel>
             {
-                //LL_INFOS("WorldMap") << "Loading Block (" << block_x << "," << block_y << ")" << LL_ENDL;
-                LLWorldMapMessage::getInstance()->sendMapBlockRequest(block_x * MAP_BLOCK_SIZE, block_y * MAP_BLOCK_SIZE, (block_x * MAP_BLOCK_SIZE) + MAP_BLOCK_SIZE - 1, (block_y * MAP_BLOCK_SIZE) + MAP_BLOCK_SIZE - 1);
-                mMapBlockLoaded[offset] = true;
-                // <FS:Ansariel> Periodically update sim info
-                mMapBlockLastUpdateOffsets[offset] = time_now;
+                // Find the maximum contiguous unloaded rectangle starting at this block
+                S32 request_width = 1;
+                S32 request_height = 1;
+
+                // Expand width (check horizontal contiguous unloaded blocks)
+                while (request_width < MAX_BLOCKS_PER_SIDE &&
+                    (block_x + request_width) <= block_x1)
+                {
+                    // request_height is 1, can add blocks one by one.
+                    S32 check_offset = (block_x + request_width) | (block_y * MAP_BLOCK_RES);
+                    if (mMapBlockLoaded[check_offset] && mMapBlockLastUpdateOffsets.find(check_offset) != mMapBlockLastUpdateOffsets.end())
+                    {
+                        break;
+                    }
+                    ++request_width;
+                }
+
+                // Expand height (check vertical contiguous unloaded blocks)
+                while (request_height < MAX_BLOCKS_PER_SIDE &&
+                    (block_y + request_height) <= block_y1 &&
+                    (request_width * (request_height + 1) <= MAX_TOTAL_BLOCKS)) // Don't exceed 64 total regions
+                {
+                    bool can_expand = true;
+                    // Width can be >1, loop over blocks in the line
+                    for (S32 x = 0; x < request_width; ++x)
+                    {
+                        S32 check_offset = (block_x + x) | ((block_y + request_height) * MAP_BLOCK_RES);
+                        if (mMapBlockLoaded[check_offset] && mMapBlockLastUpdateOffsets.find(check_offset) != mMapBlockLastUpdateOffsets.end())
+                        {
+                            can_expand = false;
+                            break;
+                        }
+                    }
+                    if (!can_expand) break;
+                    ++request_height;
+                }
+
+                // Send request for the contiguous rectangle
+                S32 min_x = block_x * MAP_BLOCK_SIZE;
+                S32 min_y = block_y * MAP_BLOCK_SIZE;
+                S32 max_x = (block_x + request_width) * MAP_BLOCK_SIZE - 1;
+                S32 max_y = (block_y + request_height) * MAP_BLOCK_SIZE - 1;
+
+                LL_DEBUGS("WorldMap") << "Loading Block rectangle (" << block_x << "," << block_y
+                    << ") to (" << (block_x + request_width - 1) << "," << (block_y + request_height - 1)
+                    << ") [" << (request_width * request_height * MAP_BLOCK_SIZE * MAP_BLOCK_SIZE) << " regions]" << LL_ENDL;
+
+                // <FS:Beq> Respect the 64-region request limit with Firestorm cache block sizes.
+                // LLWorldMapMessage::getInstance()->sendMapBlockRequest(min_x, min_y, max_x, max_y);
+                const S32 chunk_width = llmin(max_x - min_x + 1, MAX_REQUEST_REGIONS);
+                const S32 chunk_height = MAX_REQUEST_REGIONS / chunk_width;
+                for (S32 y = min_y; y <= max_y; y += chunk_height)
+                {
+                    for (S32 x = min_x; x <= max_x; x += chunk_width)
+                    {
+                        LLWorldMapMessage::getInstance()->sendMapBlockRequest(
+                            x, y, llmin(x + chunk_width - 1, max_x),
+                            llmin(y + chunk_height - 1, max_y));
+                    }
+                }
+                // </FS:Beq>
+
+                // Mark all blocks in the requested rectangle as loaded
+                for (S32 y = 0; y < request_height; ++y)
+                {
+                    for (S32 x = 0; x < request_width; ++x)
+                    {
+                        S32 mark_offset = (block_x + x) | ((block_y + y) * MAP_BLOCK_RES);
+                        mMapBlockLoaded[mark_offset] = true;
+                        // <FS:Ansariel> Periodically update sim info
+                        mMapBlockLastUpdateOffsets[mark_offset] = time_now;
+                    }
+                }
+
+                // Skip over the width of blocks we just requested
+                block_x += request_width;
+            }
+            else
+            {
+                // This block is already loaded, move to next
+                ++block_x;
             }
         }
+        ++block_y;
     }
 }
 

@@ -425,6 +425,17 @@ Initialization with the Marketplace failed because of a system or network error.
     </notification>
 
     <notification
+        icon="alertmodal.tga"
+        name="CannotPasteFolderIntoSelf"
+        type="alertmodal">
+        You cannot paste a folder into itself or into one of its subfolders.
+        <tag>fail</tag>
+        <usetemplate
+          name="okbutton"
+          yestext="OK"/>
+    </notification>
+
+    <notification
      icon="notifytip.tga"
      name="InvalidKeystroke"
      type="notifytip">
@@ -898,6 +909,64 @@ If you no longer wish to have these abilities granted to this role, disable them
       name="okcancelignore"
       notext="Cancel"
       yestext="Ban"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="FSBanFromAllGroups"
+   type="alertmodal">
+You are about to ban [AVATAR_NAME] from all [COUNT] groups you can manage bans in:
+
+[GROUPS]
+    <tag>group</tag>
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Ban"/>
+  </notification>
+  <notification
+   icon="alertmodal.tga"
+   name="FSUnbanFromAllGroups"
+   type="alertmodal">
+You are about to lift the ban on [AVATAR_NAME] in all [COUNT] groups you can manage bans in:
+
+[GROUPS]
+    <tag>group</tag>
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Unban"/>
+  </notification>
+  <notification
+   icon="notify.tga"
+   name="FSBanFromAllGroupsStarted"
+   type="notify">
+    Updating group bans for [AVATAR_NAME] in [COUNT] groups, one group at a time. A report will follow when done.
+    <tag>group</tag>
+  </notification>
+  <notification
+   icon="alertmodal.tga"
+   name="FSBanFromAllGroupsReport"
+   type="alertmodal">
+[AVATAR_NAME] has been banned in [DONE] of [COUNT] groups.
+
+Banned in: [SUCCEEDED]
+
+Failed in: [FAILED]
+    <tag>group</tag>
+  </notification>
+  <notification
+   icon="alertmodal.tga"
+   name="FSUnbanFromAllGroupsReport"
+   type="alertmodal">
+The ban on [AVATAR_NAME] has been lifted in [DONE] of [COUNT] groups.
+
+Lifted in: [SUCCEEDED]
+
+Failed in: [FAILED]
+    <tag>group</tag>
   </notification>
 
   <notification
@@ -1758,6 +1827,21 @@ Save Changes?
      notext="Don&apos;t Save"
      yestext="Save"/>
   </notification>
+
+  <!-- <FS:Trish> FIRE-32374: Say which script the prompt is about -->
+  <notification
+   icon="alertmodal.tga"
+   name="SaveScriptChanges"
+   type="alertmodal">
+Save changes to [NAME]?
+    <tag>confirm</tag>
+    <usetemplate
+     canceltext="Cancel"
+     name="yesnocancelbuttons"
+     notext="Don&apos;t Save"
+     yestext="Save"/>
+  </notification>
+  <!-- </FS:Trish> -->
 
   <notification
    icon="alertmodal.tga"
@@ -4117,7 +4201,6 @@ Local Data you are deleting is shared between multiple grids, are you sure you w
 Your character will appear in a moment.
 
 Use arrow keys to walk.
-Press the F1 key at any time for help or to learn more about [CURRENT_GRID].
 Please choose the male or female avatar. You can change your mind later.
     <usetemplate
      name="okcancelbuttons"
@@ -6008,6 +6091,17 @@ You won't receive any more notifications that you're about to visit a region wit
 
   <notification
    icon="alertmodal.tga"
+   name="RegionTPAccessBlocked_NotifyAdultsOnly"
+   type="alertmodal">
+    <tag>fail</tag>
+    The region you are trying to visit is rated [REGIONMATURITY_CAP], which is not available on your account type.
+    <usetemplate
+     name="okbutton"
+     yestext="OK"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
    name="LandClaimAccessBlocked"
    type="alertmodal">
     The land you're trying to claim has a maturity rating exceeding your current preferences.  You can change your preferences using Avatar &gt; Preferences &gt; General.
@@ -7576,6 +7670,27 @@ URL: [AUDIOURL]
    type="notifytip">
 [MESSAGE]
   </notification>
+
+  <notification
+   icon="notifytip.tga"
+   name="ExternalEditorServerStarted"
+   type="notifytip">
+External editor server started on port [PORT].
+  </notification>
+
+  <notification
+   icon="notifytip.tga"
+   name="ExternalEditorServerFailed"
+   type="notifytip">
+Failed to start external editor server on port [PORT].
+  </notification>
+
+  <notification
+   icon="notifytip.tga"
+   name="ExternalEditorServerStopped"
+   type="notifytip">
+External editor server stopped.
+  </notification>
   
   <notification
    icon="notifytip.tga"
@@ -8236,7 +8351,7 @@ Message from [NAME]:
    type="notify">
     <unique/>
 This land has damage enabled.
-You can be hurt here. If you die, you will be teleported to your home location.
+You can be hurt here. If you die, you might be teleported to your home location, region telehub or parcel landing point.
   </notification>
 
   <notification
@@ -13752,19 +13867,6 @@ able to add a payment method at checkout.
        text="Cancel"/>
     </form>
   </notification>
-  
-<!-- <FS:Zi> Add float LSL color entry widgets -->
-  <notification
-   icon="notify.tga"
-   name="LSLColorCopiedToClipboard"
-   type="alertmodal">
-The LSL color string has been copied to your clipboard. You can now paste it into your script to use it.
-   <form name="form">
-      <ignore name="ignore"
-       text="An LSL color string was copied to my clipboard"/>
-    </form>
-  </notification>
-  <!-- <FS:Zi> Add float LSL color entry widgets -->
 
   <!-- <FS:HG> FIRE-6340, FIRE-6567 - Setting Bandwidth issues-->
   <!-- <FS:TS> FIRE-6795: Remove warning at every login -->
@@ -14374,7 +14476,7 @@ Due to server load, this mass change can take a while to become effective and ma
   </notification>
   <notification
    icon="alertmodal.tga"
-   name="GlobalOnlineStatusToggle"
+   name="GlobalOnlineStatusToggleInfo"
    type="alertmodal">
 Due to server load, mass toggling online status visibility can take a while to become effective. Please be patient.
     <usetemplate
@@ -15024,6 +15126,24 @@ For detailed instructions on how to whitelist [APP_NAME] - including a list of f
 https://wiki.firestormviewer.org/antivirus_whitelisting
   </notification>
 
+  <!-- <FS:TJ> Detect and notify if the viewer is trying to run as admin on Windows -->
+  <notification
+    icon="alertmodal.tga"
+    name="ViewerProcessRunningAsAdmin"
+    type="alertmodal">
+One or more viewer processes are currently running as administrator. This is known to cause a number of issues and prevent media and web pages working within the viewer.
+
+Please ensure that all viewer processes are not set to run as administrator. For more information, please read here:
+
+https://wiki.firestormviewer.org/fs_media#one_or_more_viewer_processes_are_currently_running_as_administrator_error_message
+    <tag>fail</tag>
+    <usetemplate
+     ignoretext="Warn me when the viewer is running as administrator"
+     name="okignore"
+     yestext="OK" />
+  </notification>
+  <!-- </FS:TJ> -->
+
    <notification
    icon="alertmodal.tga"
    label="Confirm Pose Overwrite"
@@ -15449,4 +15569,82 @@ You can enable saving transcripts under Preferences &gt; Privacy &gt; Logs &amp;
         </form>
     </notification>
   <!-- </FS:minerjr> [FIRE-36763] -->
+
+  <!-- <FS:Amy> Favorite Wearables folders -->
+  <notification
+   icon="alertmodal.tga"
+   name="FSWearableFavoritesNewFolder"
+   type="alertmodal">
+Enter a name for the new Favorite Wearables folder:
+    <form name="form">
+      <input name="message" type="text" default="true">
+New Folder
+      </input>
+      <button
+       default="true"
+       index="0"
+       name="OK"
+       text="OK"/>
+      <button
+       index="1"
+       name="Cancel"
+       text="Cancel"/>
+    </form>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="FSWearableFavoritesRenameFolder"
+   type="alertmodal">
+Enter a new name for Favorite Wearables folder [FOLDER_NAME]:
+    <form name="form">
+      <input name="message" type="text" default="true">
+[FOLDER_NAME]
+      </input>
+      <button
+       default="true"
+       index="0"
+       name="OK"
+       text="OK"/>
+      <button
+       index="1"
+       name="Cancel"
+       text="Cancel"/>
+    </form>
+  </notification>
+
+
+
+  <notification
+   icon="alertmodal.tga"
+   name="FSWearableFavoritesDeleteFolder"
+   type="alertmodal">
+Delete Favorite Wearables folder "[FOLDER_NAME]"?
+
+This removes the folder and its favorite links only. Original inventory items are not deleted.
+    <form name="form">
+      <button
+       default="true"
+       index="0"
+       name="Delete"
+       text="Delete"/>
+      <button
+       index="1"
+       name="Cancel"
+       text="Cancel"/>
+    </form>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="FSWearableFavoritesFolderInvalidName"
+   type="alertmodal">
+Could not create Favorite Wearables folder "[FOLDER_NAME]".
+Folder names cannot contain / or \.
+    <usetemplate
+     name="okbutton"
+     yestext="OK"/>
+  </notification>
+  <!-- </FS:Amy> Favorite Wearables folders -->
+
 </notifications>

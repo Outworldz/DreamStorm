@@ -254,9 +254,24 @@ void    LLComboBox::resetDirty()
     }
 }
 
-bool LLComboBox::itemExists(const std::string& name)
+bool LLComboBox::itemExists(const std::string& name) const
 {
     return mList->getItemByLabel(name);
+}
+
+bool LLComboBox::valueExists(const std::string& value) const
+{
+    return mList->getItemByValue(value);
+}
+
+LLScrollListItem* LLComboBox::findItemByValue(const std::string& value) const
+{
+    return mList->getItemByValue(value);
+}
+
+std::vector<LLScrollListItem*> LLComboBox::getAllData() const
+{
+    return mList->getAllData();
 }
 
 // add item "name" to menu
@@ -1366,6 +1381,39 @@ bool LLComboBox::selectItemRange( S32 first, S32 last )
     return mList->selectItemRange(first, last);
 }
 
+void LLComboBox::addInfo(LLSD& info)
+{
+    LLUICtrl::addInfo(info);
+
+    if (mList && mList->getItemCount() > 0)
+    {
+        LLSD items_array;
+        std::vector<LLScrollListItem*> item_list = mList->getAllData();
+        for (std::vector<LLScrollListItem*>::iterator iter = item_list.begin(); iter != item_list.end(); ++iter)
+        {
+            if (LLScrollListItem* item = *iter)
+            {
+                LLSD item_info;
+                item_info["value"] = item->getValue();
+                if (item->getNumColumns() > 0)
+                {
+                    if (LLScrollListCell* cell = item->getColumn(0))
+                    {
+                        item_info["label"] = cell->getValue();
+                    }
+                }
+                items_array.append(item_info);
+            }
+        }
+        info["items"] = items_array;
+        info["item_count"] = mList->getItemCount();
+        info["current_selection"] = getSelectedItemLabel();
+    }
+    else
+    {
+        info["item_count"] = 0;
+    }
+}
 
 static LLDefaultChildRegistry::Register<LLIconsComboBox> register_icons_combo_box("icons_combo_box");
 

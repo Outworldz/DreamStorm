@@ -159,18 +159,36 @@ void LLFloaterIMContainer::sessionIDUpdated(const LLUUID& old_session_id, const 
 {
     // The general strategy when a session id is modified is to delete all related objects and create them anew.
 
+    // The conversation floater can be active while participant widgets are selected.
+    // Preserve that state separately so the new conversation widget can be selected
+    // after the server replaces an outgoing ad-hoc session id.
+    const bool was_active = old_session_id == getSelectedSession();
+
     // Note however that the LLFloaterIMSession has its session id updated through a call to sessionInitReplyReceived()
     // and do not need to be deleted and recreated (trying this creates loads of problems). We do need however to suppress
     // its related mSessions record as it's indexed with the wrong id.
-    // Grabbing the updated LLFloaterIMSession and readding it in mSessions will eventually be done by addConversationListItem().
     mSessions.erase(old_session_id);
 
-    // Delete the model and participants related to the old session
-    bool change_focus = removeConversationListItem(old_session_id);
+    // Remove the old conversation widget without changing focus - we'll immediately re-add with
+    // the new id and select it, avoiding an unnecessary focus switch to an adjacent conversation.
+    bool was_selected = removeConversationListItem(old_session_id, false);
 
     // Create a new conversation with the new id
-    addConversationListItem(new_session_id, change_focus);
+    addConversationListItem(new_session_id, was_selected);
     LLFloaterIMSessionTab::addToHost(new_session_id);
+
+    // addToHost is a no-op for already-hosted floaters, so mSessions won't be
+    // updated by addFloater. Re-register manually so message flash works.
+    LLFloaterIMSessionTab* conversp = LLFloaterIMSessionTab::findConversation(new_session_id);
+    if (conversp && mSessions.find(new_session_id) == mSessions.end())
+    {
+        mSessions[new_session_id] = conversp;
+    }
+
+    if (was_active)
+    {
+        selectConversationPair(new_session_id, true, false, true);
+    }
 }
 
 
@@ -403,7 +421,7 @@ void LLFloaterIMContainer::onNewMessageReceived(const LLSD& data)
     LLFloater* floaterp = get_ptr_in_map(mSessions, session_id);
     LLFloater* current_floater = LLMultiFloater::getActiveFloater();
 
-    if(floaterp && current_floater && floaterp != current_floater)
+    if (floaterp && floaterp != current_floater)
     {
         if(LLMultiFloater::isFloaterFlashing(floaterp))
             LLMultiFloater::setFloaterFlashing(floaterp, false);
@@ -1349,6 +1367,12 @@ void LLFloaterIMContainer::doToParticipants(const std::string& command, uuid_vec
         {
             banSelectedMember(userID);
         }
+        // <FS:PP> Ban from all groups
+        else if ("ban_from_all_groups" == command)
+        {
+            LLGroupActions::banFromAllGroups(userID);
+        }
+        // </FS:PP>
     }
     else if (selectedIDS.size() > 1)
     {
@@ -1664,6 +1688,12 @@ bool LLFloaterIMContainer::enableContextMenuItem(const std::string& item, uuid_v
     {
         return canBanSelectedMember(single_id);
     }
+    // <FS:PP> Ban from all groups
+    else if ("can_ban_from_all_groups" == item)
+    {
+        return is_single_select && LLGroupActions::canBanFromAnyGroup(single_id);
+    }
+    // </FS:PP>
     else if (is_moderator_option)
     {
         // *TODO : get that out of here...
@@ -1738,7 +1768,7 @@ bool LLFloaterIMContainer::visibleContextMenuItem(const LLSD& userdata)
 void LLFloaterIMContainer::showConversation(const LLUUID& session_id)
 {
     setVisibleAndFrontmost(false);
-    selectConversationPair(session_id, true);
+    selectConversationPair(session_id, true, true, true);
 
     LLFloaterIMSessionTab* session_floater = LLFloaterIMSessionTab::findConversation(session_id);
     if (session_floater)
@@ -1784,13 +1814,13 @@ void LLFloaterIMContainer::selectNextConversationByID(const LLUUID& uuid)
 }
 
 // Synchronous select the conversation item and the conversation floater
-bool LLFloaterIMContainer::selectConversationPair(const LLUUID& session_id, bool select_widget, bool focus_floater/*=true*/)
+bool LLFloaterIMContainer::selectConversationPair(const LLUUID& session_id, bool select_widget, bool focus_floater/*=true*/, bool force_select_widget/*=false*/)
 {
     bool handled = true;
     LLFloaterIMSessionTab* session_floater = LLFloaterIMSessionTab::findConversation(session_id);
 
     /* widget processing */
-    if (select_widget && mConversationsRoot->getSelectedCount() <= 1)
+    if (select_widget && (force_select_widget || mConversationsRoot->getSelectedCount() <= 1))
     {
         LLFolderViewItem* widget = get_ptr_in_map(mConversationsWidgets,session_id);
         if (widget && widget->getParentFolder())
@@ -1994,7 +2024,7 @@ bool LLFloaterIMContainer::removeConversationListItem(const LLUUID& uuid, bool c
     mConversationEventQueue.erase(uuid);
 
     // Don't let the focus fall IW, select and refocus on the first conversation in the list
-    if (change_focus && isInVisibleChain())
+    if (change_focus && is_widget_selected && isInVisibleChain())
     {
         setFocus(true);
         if (new_selection)

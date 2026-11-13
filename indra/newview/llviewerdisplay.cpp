@@ -55,7 +55,6 @@
 #include "llmemory.h"
 #include "llparcel.h"
 #include "llperfstats.h"
-#include "llpostprocess.h"
 #include "llrender.h"
 #include "llscenemonitor.h"
 #include "llsdjson.h"
@@ -226,11 +225,9 @@ void display_update_camera()
     // Cut draw distance in half when customizing avatar,
     // but on the viewer only.
     F32 final_far = gAgentCamera.mDrawDistance;
-
     // <FS:TJ> [FIRE-35748] Only enable the LL Draw Distance VRAM optimization when the setting is enabled
     static LLCachedControl<bool> use_vram_optimization(gSavedSettings, "FSDrawDistanceVRAMOptimization", false);
     // </FS:TJ>
-
     if (gCubeSnapshot)
     {
         static LLCachedControl<F32> reflection_probe_draw_distance(gSavedSettings, "RenderReflectionProbeDrawDistance", 64.f);
@@ -248,7 +245,7 @@ void display_update_camera()
         final_far = llmax(32.f, final_far / mem_factor);
     }
 // <FS:CR> Aurora sim
-    if(LLWorld::getInstance()->getLockedDrawDistance())
+    if (LLWorld::getInstance()->getLockedDrawDistance())
     {
         //Reset the draw distance and do not update with the new val
         final_far = LLViewerCamera::getInstance()->getFar();
@@ -1208,7 +1205,7 @@ void display(bool rebuild, F32 zoom_factor, int subfield, bool for_snapshot)
         LLGLSLShader::finishProfile(stats);
 
         auto report_name = getProfileStatsFilename();
-        std::ofstream outf(report_name);
+        llofstream outf(report_name);
         if (! outf)
         {
             LL_WARNS() << "Couldn't write to " << std::quoted(report_name) << LL_ENDL;
@@ -1274,15 +1271,12 @@ std::string getProfileStatsFilename()
     // same second), may produce (e.g.) sec==61, but avoids collisions and
     // preserves chronological filename sort order.
     std::string name;
-    std::error_code ec;
     do
     {
         // base + missing 2-digit seconds, append ".json"
         // post-increment sec in case we have to try again
         name = stringize(base, std::setw(2), std::setfill('0'), sec++, ".json");
-    } while (std::filesystem::exists(fsyspath(name), ec));
-    // Ignoring ec means we might potentially return a name that does already
-    // exist -- but if we can't check its existence, what more can we do?
+    } while (LLFile::exists(name));
     return name;
 }
 

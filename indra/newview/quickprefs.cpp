@@ -1248,8 +1248,16 @@ void FloaterQuickPrefs::updateControl(const std::string& controlName, ControlEnt
     {
         LLSliderCtrl* slider = (LLSliderCtrl*)widget;
         slider->setPrecision(decimals);
-        slider->setMinValue(entry.min_value);
-        slider->setMaxValue(entry.max_value);
+        if (entry.min_value >= slider->getMaxValue())
+        {
+            slider->setMaxValue(entry.max_value);
+            slider->setMinValue(entry.min_value);
+        }
+        else
+        {
+            slider->setMinValue(entry.min_value);
+            slider->setMaxValue(entry.max_value);
+        }
         slider->setIncrement(entry.increment);
     }
     else if (entry.type == ControlTypeColor4)
@@ -1581,7 +1589,7 @@ void FloaterQuickPrefs::onEditModeChanged()
     // Write the resulting XML to file
     if (!output_node->isNull())
     {
-        if (LLFILE* fp = LLFile::fopen(settings_path, "w"))
+        if (LLFILE* fp = LLFile::fopen(settings_path, LLFILE_MODE("w")))
         {
             LLXMLNode::writeHeaderToFile(fp);
             output_node->writeToFile(fp);

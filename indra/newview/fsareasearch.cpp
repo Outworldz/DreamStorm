@@ -1084,6 +1084,29 @@ void FSAreaSearch::matchObject(FSObjectProperties& details, LLViewerObject* obje
     owner_name = RLVa_hideNameIfRestricted(owner_name);
     last_owner_name = RLVa_hideNameIfRestricted(last_owner_name);
 
+    // FIRE-35212: The displayed name is setting-depending and can fail to find a user if the
+    // format entered in the search input does not match the format used in the UI.
+    // This matches the behavior of other LL floaters
+    auto name_matches = [this](const LLUUID& id, const std::string& shown_name, bool group, const std::string& search, const boost::regex& regex)
+    {
+        auto matches = [&](const std::string& name)
+        {
+            return mRegexSearch ? boost::regex_match(name, regex) : !boost::ifind_first(name, search).empty();
+        };
+
+        if (matches(shown_name))
+        {
+            return true;
+        }
+
+        LLAvatarName av_name;
+        if (group || gRlvHandler.hasBehaviour(RLV_BHVR_SHOWNAMES) || !LLAvatarNameCache::get(id, &av_name))
+        {
+            return false;
+        }
+        return matches(av_name.getLegacyName()) || matches(av_name.getAccountName()) || matches(av_name.getDisplayName(true));
+    };
+
     if (mRegexSearch)
     {
         try
@@ -1096,7 +1119,7 @@ void FSAreaSearch::matchObject(FSObjectProperties& details, LLViewerObject* obje
             {
                 return;
             }
-            if (!mSearchOwner.empty() && !boost::regex_match(owner_name, mRegexSearchOwner))
+            if (!mSearchOwner.empty() && !name_matches(details.ownership_id, owner_name, details.group_owned, mSearchOwner, mRegexSearchOwner))
             {
                 return;
             }
@@ -1104,11 +1127,11 @@ void FSAreaSearch::matchObject(FSObjectProperties& details, LLViewerObject* obje
             {
                 return;
             }
-            if (!mSearchCreator.empty() && !boost::regex_match(creator_name, mRegexSearchCreator))
+            if (!mSearchCreator.empty() && !name_matches(details.creator_id, creator_name, false, mSearchCreator, mRegexSearchCreator))
             {
                 return;
             }
-            if (!mSearchLastOwner.empty() && !boost::regex_match(last_owner_name, mRegexSearchLastOwner))
+            if (!mSearchLastOwner.empty() && !name_matches(details.last_owner_id, last_owner_name, false, mSearchLastOwner, mRegexSearchLastOwner))
             {
                 return;
             }
@@ -1140,7 +1163,7 @@ void FSAreaSearch::matchObject(FSObjectProperties& details, LLViewerObject* obje
         {
             return;
         }
-        if (!mSearchOwner.empty() && boost::ifind_first(owner_name, mSearchOwner).empty())
+        if (!mSearchOwner.empty() && !name_matches(details.ownership_id, owner_name, details.group_owned, mSearchOwner, mRegexSearchOwner))
         {
             return;
         }
@@ -1148,11 +1171,11 @@ void FSAreaSearch::matchObject(FSObjectProperties& details, LLViewerObject* obje
         {
             return;
         }
-        if (!mSearchCreator.empty() && boost::ifind_first(creator_name, mSearchCreator).empty())
+        if (!mSearchCreator.empty() && !name_matches(details.creator_id, creator_name, false, mSearchCreator, mRegexSearchCreator))
         {
             return;
         }
-        if (!mSearchLastOwner.empty() && boost::ifind_first(last_owner_name, mSearchLastOwner).empty())
+        if (!mSearchLastOwner.empty() && !name_matches(details.last_owner_id, last_owner_name, false, mSearchLastOwner, mRegexSearchLastOwner))
         {
             return;
         }
@@ -1593,7 +1616,7 @@ bool FSPanelAreaSearchList::handleKeyHere(KEY key, MASK mask)
             return true;
         }
     }
-	
+    
     return LLPanel::handleKeyHere(key, mask);
 }
 
@@ -1621,22 +1644,22 @@ void FSPanelAreaSearchList::onCopyToClipboard()
 
     clipboard_text = "Distance\tName\tDescription\tPrice\tLand Impact\tPrim Count\tOwner\tGroup\tCreator\tLast Owner\n";
 
-	for (const auto& item : selected_items)
-	{
-		if (!item)
-			continue;
+    for (const auto& item : selected_items)
+    {
+        if (!item)
+            continue;
 
-		auto getColumnValue = [&](S32 column_idx) {
-			return item->getColumn(column_idx) ? item->getColumn(column_idx)->getValue().asString() : "";
-		};
+        auto getColumnValue = [&](S32 column_idx) {
+            return item->getColumn(column_idx) ? item->getColumn(column_idx)->getValue().asString() : "";
+        };
 
-		const S32 column_count =  item->getNumColumns();
-		for (S32 i = 0; i < column_count; ++i)
-		{
-			clipboard_text += getColumnValue(i);
-			clipboard_text += (i < column_count - 1) ? "\t" : "\n";
-		}
-	}
+        const S32 column_count =  item->getNumColumns();
+        for (S32 i = 0; i < column_count; ++i)
+        {
+            clipboard_text += getColumnValue(i);
+            clipboard_text += (i < column_count - 1) ? "\t" : "\n";
+        }
+    }
 
     // Remove trailing newline
     if (!clipboard_text.empty() && clipboard_text.back() == '\n')
@@ -1645,8 +1668,8 @@ void FSPanelAreaSearchList::onCopyToClipboard()
     }
 
     // Copy to system clipboard
-	LLWString wstr = utf8str_to_wstring(clipboard_text);
-	LLClipboard::instance().copyToClipboard(wstr, 0, static_cast<S32>(wstr.length()));
+    LLWString wstr = utf8str_to_wstring(clipboard_text);
+    LLClipboard::instance().copyToClipboard(wstr, 0, static_cast<S32>(wstr.length()));
 }
 
 void FSPanelAreaSearchList::onCommitCheckboxBeacons()
@@ -2194,6 +2217,7 @@ bool FSPanelAreaSearchList::onContextMenuItemClick(const LLSD& userdata)
     case 'e': // edit
     case 'd': // delete
     case 'r': // return
+    case 'o': // o_return_separate
     {
         // select the objects first
         LLSelectMgr::getInstance()->deselectAll();
@@ -2206,7 +2230,7 @@ bool FSPanelAreaSearchList::onContextMenuItemClick(const LLSD& userdata)
             if (objectp)
             {
                 LLSelectMgr::getInstance()->selectObjectAndFamily(objectp);
-                if (c == 'r')
+                if (c == 'r' || c == 'o')
                 {
                     // need to set permissions for object return
                     LLSelectNode* node = LLSelectMgr::getInstance()->getSelection()->findNode(objectp);
@@ -2242,11 +2266,12 @@ bool FSPanelAreaSearchList::onContextMenuItemClick(const LLSD& userdata)
             handle_object_delete();
             break;
         case 'r': // return
+        case 'o': // o_return_separate
             if (RlvActions::isRlvEnabled() && !rlvCanDeleteOrReturn())
             {
                 break;
             }
-            handle_object_return();
+            handle_object_return(c == 'o');
             break;
         default:
             break;
@@ -2276,7 +2301,8 @@ void FSPanelAreaSearchList::touchObject(LLViewerObject* objectp)
 void FSPanelAreaSearchList::buyObject(FSObjectProperties& details, LLViewerObject* objectp)
 {
     LLSelectMgr::getInstance()->deselectAll();
-    LLSelectMgr::getInstance()->selectObjectAndFamily(objectp);
+    // FIRE-36992: Ignore the build selection filters (select only owned, movable or copyable objects), buying needs the selection
+    LLSelectMgr::getInstance()->selectObjectAndFamily(objectp, false, true);
 
     if (LLSelectNode* node = LLSelectMgr::getInstance()->getSelection()->findNode(objectp))
     {
@@ -2302,7 +2328,8 @@ void FSPanelAreaSearchList::sitOnObject(FSObjectProperties& details, LLViewerObj
     if ( (!RlvActions::isRlvEnabled()) || (RlvActions::canSit(objectp)) )
     {
         LLSelectMgr::getInstance()->deselectAll();
-        LLSelectMgr::getInstance()->selectObjectAndFamily(objectp);
+        // FIRE-36992: Ignore the build selection filters (select only owned, movable or copyable objects), sitting needs the selection
+        LLSelectMgr::getInstance()->selectObjectAndFamily(objectp, false, true);
         LLSelectNode* node = LLSelectMgr::getInstance()->getSelection()->findNode(objectp);
         if (node)
         {

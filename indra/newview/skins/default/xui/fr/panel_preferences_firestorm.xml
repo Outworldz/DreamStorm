@@ -27,6 +27,17 @@
 			<slider name="manual_environment_change_transition_period" label="Durée de transition de l'environnement :" tool_tip="Intervalle de transition en secondes entre des environnements. Zéro veut dire instantané."/>
 			<check_box name="EnvironmentPersistAcrossLogin" label="Persistance des réglages d'environnement entre deux sessions" tool_tip="Reprend les réglages actuels d'environnement lors de la prochaine connexion."/>
 			<check_box name="FSRepeatedEnvTogglesShared" label="La répétition des raccourcis clavier de l'environnement rétablit l'environnement partagé" tool_tip="Permet à des combinaisons de touches répétées (par exemple ctrl+shift+y) d'alterner entre le préréglage demandé &amp; l'environnement partagé"/>
+			<text name="FSCloudColorLabel">
+				Couleur du nuage chargement avatar / Échec :
+			</text>
+			<text name="FSCloudColorStartLabel">
+				Début :
+			</text>
+			<text name="FSCloudColorEndLabel">
+				Fin :
+			</text>
+			<color_swatch name="FSCloudColorStart" tool_tip="Couleur initiale du nuage de particules affiché pendant le chargement d'un avatar ou en cas d'échec de son affichage. S'applique immédiatement, aucun redémarrage n'est nécessaire."/>
+			<color_swatch name="FSCloudColorEnd" tool_tip="Couleur finale du nuage de particules affiché pendant le chargement d'un avatar ou en cas d'échec de son affichage. S'applique immédiatement, aucun redémarrage n'est nécessaire."/>
 		</panel>
 		<panel label="Protection" name="ProtectionTab">
 			<check_box label="Empêcher de s'asseoir sur les objets par clic simple" name="FSBlockClickSit"/>
@@ -115,8 +126,13 @@
 			<fs_embedded_item_drop_target name="embed_item" tool_tip="Déposez ici un objet provenant de votre inventaire.">Déposez un objet ici.</fs_embedded_item_drop_target>
 			<text name="build_item_add_disp_rect_txt">Actuellement : [ITEM]</text>
 			<check_box name="FSBuildPrefs_UseCustomScript" label="Script personnalisé pour bouton Nouveau script"/>
-			<fs_embedded_item_drop_target name="custom_script" tool_tip="Déposez ici un script provenant de votre inventaire.">Déposez un script ici.</fs_embedded_item_drop_target>
-			<text name="custom_script_disp_rect_txt">Actuellement: [SCRIPT]</text>
+			<fs_embedded_item_drop_target name="custom_script" tool_tip="Déposez ici un script LSL ou Lua provenant de votre inventaire.">Déposez un script LSL ou Lua ici.</fs_embedded_item_drop_target>
+			<text name="custom_script_disp_rect_txt">
+				Script LSL : [SCRIPT]
+			</text>
+			<text name="custom_lua_script_disp_rect_txt">
+				Script Lua : [SCRIPT]
+			</text>
 			<button label="Permissions de création par défaut" name="fs_default_creation_permissions"/>
 			<check_box label="Contours lumineux des prims sélectionnées" tool_tip="Quand décoché, les contours jaunes/bleus ne seront pas affichés, améliorant les performances quand un grand nombre de prims est sélectionné." name="FSBuildPrefsRenderHighlight_toggle"/>
 			<check_box label="Afficher les limites de la parcellle sélectionnée" name="RenderParcelSelection"/>
@@ -147,16 +163,33 @@
 			<check_box label="Active les informations détaillées pour les script" tool_tip="Activée, ajoute aux informations de base sur les scripts des détails utiles aux créateurs" name="FSScriptInfoExtended"/>
 			<check_box label="Points d'attachement alphabétiques dans les menus &quot;Attacher à&quot; (redémarrage requis)" tool_tip="Si cette option est activée, la liste des points d'attachement dans les menus 'Attacher à' sera triée par ordre alphabétique." name="FSSortAttachmentSpotsAlphabetically"/>
 			<check_box label="Nouveau module de texture Firestorm dans la fenêtre d'outils (nécessite un redémarrage)" tool_tip="Si cette option est activée, les outils d'édition de textures utiliseront le flux de travail amélioré de FS et permettront l'édition de textures Blinn-Phong et PBR." name="FSUseNewTexturePanel"/>
+			<text name="buildaxiscolors_label">
+				Apparence des axes de construction X/Y/Z :
+			</text>
+			<color_swatch label="Axe X" name="colorswatchXaxis" tool_tip="Cliquez ici pour ouvrir la palette de couleurs"/>
+			<color_swatch label="Axe Y" name="colorswatchYaxis" tool_tip="Cliquez ici pour ouvrir la palette de couleurs"/>
+			<color_swatch label="Axe Z" name="colorswatchZaxis" tool_tip="Cliquez ici pour ouvrir la palette de couleurs"/>
+			<color_swatch label="Fond texte" name="colorswatchEditTextBackgroundColor" tool_tip="Cliquez ici pour ouvrir la palette de couleurs"/>
+			<spinner label="Échelle" name="editWidgetScaling" tool_tip="Adapte la taille des commandes utilisées pour modifier la rotation, l'échelle et la position."/>
+			<check_box label="Ombre du texte" tool_tip="Si cette option est activée, le texte d'aide affiché pendant la modification est doté d'une ombre portée.." name="editTextDropShadow"/>
 		</panel>
 		<panel label="Éditeur de script" name="BuildTabScriptEditor">
 			<text name="text_box_scripting_font" width="155">Police de l'éditeur de script :</text>
 			<combo_box name="FSScriptingFontName" tool_tip="Nom de la police utilisée dans l'éditeur de script LSL" />
+			<text name="text_box_scripting_font_size">
+				Taille :
+			</text>
 			<combo_box name="FSScriptingFontSize" tool_tip="Taille de la police utilisée dans l'éditeur de script LSL">
 				<combo_item name="Small" label="Petite"/>
 				<combo_item name="Medium" label="Moyenne"/>
 				<combo_item name="Large" label="Grande"/>
 			</combo_box>
 			<check_box label="Sauvegarder les scripts édités depuis l'inventaire en Mono" tool_tip="Activer cette option sauvegardera directement les scripts situés dans l'inventaire en Mono au lieu de LSL." name="FSSaveInventoryScriptsAsMono_toggle"/>
+			<check_box label="Activer la synchro WebSocket" name="websocket_sync_enable"/>
+			<text name="websocket_tip">
+				Port d'écoute WebSocket :
+			</text>
+			<check_box label="Transmettre erreurs script et info débogage aux clients WebSocket" name="websocket_forward_debug"/>
 			<check_box label="Activer le préprocesseur LSL" tool_tip="Quand coché, le préprocesseur LSL est activé." name="preproc_checkbox"/>
 			<check_box label="Optimiser" tool_tip="Quand coché, le préprocesseur LSL optimisera la place que prennent les scripts." name="preprocoptimizer_checkbox"/>
 			<check_box label="Condition switch()" left_delta="80" tool_tip="Quand coché, le préprocesseur LSL permettra l'utilisation de la condition switch() pour le contrôle de flux de scripts." name="preprocswitch_checkbox"/>
@@ -166,6 +199,7 @@
 			<button label="Parcourir" label_selected="Parcourir" name="SetPreprocInclude"/>
 			<text name="externaleditor_textbox">Éditeur externe :</text>
 			<button label="Parcourir" label_selected="Parcourir" name="SetExternalEditor"/>
+			<check_box label="Intégration étroite avec VS Code" name="tight_integration"/>
 		</panel>
 		<panel label="Chargements" name="UploadsTab">
 			<text name="title">Dossiers de destination pour les chargements :</text>

@@ -285,6 +285,9 @@ void LLManipScale::render()
                     mBoxHandleSize[i] = BOX_HANDLE_BASE_FACTOR;
                 }
                 mBoxHandleSize[i] *= ui_scale_factor;
+                // <FS:AR> [FIRE-36909] Build Tools - Provide Accessibility(Color Config)
+                mBoxHandleSize[i] *= getUserEditHandleScaling();
+                // </FS:AR> [FIRE-36909]
             }
         }
 
@@ -610,16 +613,23 @@ void LLManipScale::renderFaces( const LLBBox& bbox )
 
     LLColor4 highlight_color( 1.f, 1.f, 1.f, 0.5f);
     LLColor4 normal_color(  1.f, 1.f, 1.f, 0.3f);
+    // <FS:AR> [FIRE-36909] Build Tools - Provide Accessibility(Color Config)
+    //LLColor4 x_highlight_color( 1.f, 0.2f, 0.2f, 1.0f);
+    //LLColor4 x_normal_color(    0.6f, 0.f, 0.f, 0.4f);
 
-    LLColor4 x_highlight_color( 1.f, 0.2f, 0.2f, 1.0f);
-    LLColor4 x_normal_color(    0.6f, 0.f, 0.f, 0.4f);
+    //LLColor4 y_highlight_color( 0.2f, 1.f, 0.2f, 1.0f);
+    //LLColor4 y_normal_color(    0.f, 0.6f, 0.f, 0.4f);
 
-    LLColor4 y_highlight_color( 0.2f, 1.f, 0.2f, 1.0f);
-    LLColor4 y_normal_color(    0.f, 0.6f, 0.f, 0.4f);
+    //LLColor4 z_highlight_color( 0.2f, 0.2f, 1.f, 1.0f);
+    //LLColor4 z_normal_color(    0.f, 0.f, 0.6f, 0.4f);
+    LLColor4 x_highlight_color(getUserEditColor(VX));
+    LLColor4 x_normal_color(getUserEditColor(VX, 0.4f));
 
-    LLColor4 z_highlight_color( 0.2f, 0.2f, 1.f, 1.0f);
-    LLColor4 z_normal_color(    0.f, 0.f, 0.6f, 0.4f);
-
+    LLColor4 y_highlight_color(getUserEditColor(VY));
+    LLColor4 y_normal_color(getUserEditColor(VY, 0.4f));
+    LLColor4 z_highlight_color(getUserEditColor(VZ));
+    LLColor4 z_normal_color(getUserEditColor(VZ, 0.4f));
+    // </FS:AR> [FIRE-36909]
     LLColor4 default_normal_color( 0.7f, 0.7f, 0.7f, 0.15f );
 
     const LLVector3& min = bbox.getMinLocal();
@@ -1325,10 +1335,23 @@ void LLManipScale::renderGuidelinesPart( const LLBBox& bbox )
 
 void LLManipScale::updateSnapGuides(const LLBBox& bbox)
 {
+    const bool is_face = (LL_FACE_MIN <= (S32)mManipPart) && ((S32)mManipPart <= LL_FACE_MAX);
+    const bool is_corner = (LL_CORNER_MIN <= (S32)mManipPart) && ((S32)mManipPart <= LL_CORNER_MAX);
+    if (!is_face && !is_corner)
+    {
+        return;
+    }
+
     LLVector3 grid_origin;
     LLVector3 grid_scale;
     LLQuaternion grid_rotation;
     LLSelectMgr::getInstance()->getGrid(grid_origin, grid_rotation, grid_scale);
+    LLViewerCamera* camera = LLViewerCamera::getInstance();
+    if (!camera)
+    {
+        // can be null on shutdown
+        return;
+    }
 
     bool uniform = LLManipScale::getUniform();
 
@@ -1365,7 +1388,7 @@ void LLManipScale::updateSnapGuides(const LLBBox& bbox)
     LLVector3 off_axis_dir = mScaleDir % cam_at_axis;
     off_axis_dir.normalize();
 
-    if( (LL_FACE_MIN <= (S32)mManipPart) && ((S32)mManipPart <= LL_FACE_MAX) )
+    if (is_face)
     {
         LLVector3 bbox_relative_cam_dir = off_axis_dir * ~bbox.getRotation();
         bbox_relative_cam_dir.abs();
@@ -1390,7 +1413,7 @@ void LLManipScale::updateSnapGuides(const LLBBox& bbox)
         mSnapDir1 = mScaleDir;
         mSnapDir2 = mScaleDir;
     }
-    else if( (LL_CORNER_MIN <= (S32)mManipPart) && ((S32)mManipPart <= LL_CORNER_MAX) )
+    else if (is_corner)
     {
         LLVector3 local_camera_dir;
         if (mObjectSelection->getSelectType() == SELECT_TYPE_HUD)

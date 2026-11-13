@@ -136,18 +136,21 @@ LLFloaterInspect::~LLFloaterInspect(void)
     {
         mCreatorNameCacheConnection.disconnect();
     }
-    if(!LLFloaterReg::instanceVisible("build"))
+    if (!LLApp::isExiting())
     {
-        if(LLToolMgr::getInstance()->getBaseTool() == LLToolCompInspect::getInstance())
+        if (!LLFloaterReg::instanceVisible("build"))
         {
-            LLToolMgr::getInstance()->clearTransientTool();
+            if (LLToolMgr::getInstance()->getBaseTool() == LLToolCompInspect::getInstance())
+            {
+                LLToolMgr::getInstance()->clearTransientTool();
+            }
+            // Switch back to basic toolset
+            LLToolMgr::getInstance()->setCurrentToolset(gBasicToolset);
         }
-        // Switch back to basic toolset
-        LLToolMgr::getInstance()->setCurrentToolset(gBasicToolset);
-    }
-    else
-    {
-        LLFloaterReg::showInstance("build", LLSD(), true);
+        else
+        {
+            LLFloaterReg::showInstance("build", LLSD(), true);
+        }
     }
 
     // <FS:Ansariel> FIRE-22292: Configurable columns
@@ -167,6 +170,7 @@ void LLFloaterInspect::onOpen(const LLSD& key)
     LLSelectMgr::getInstance()->setForceSelection(forcesel);    // restore previouis value
     mObjectSelection = LLSelectMgr::getInstance()->getSelection();
     refresh();
+    mDirty = false;
 }
 
 // [RLVa:KB] - Checked: RLVa-2.0.1

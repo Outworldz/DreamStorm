@@ -40,6 +40,12 @@
 
 // Hack for async host by name
 #define LL_WM_HOST_RESOLVED      (WM_APP + 1)
+// For requesting shutdown on uninstall,
+// make sure it does not conflict with messages like WM_DUMMY_
+inline constexpr UINT WM_POST_UNINSTALL_ = WM_USER + 0x0019;
+inline constexpr DWORD WM_POST_UNINSTALL_MSG_SHUTDOWN = 1;
+inline constexpr DWORD WM_POST_UNINSTALL_MSG_UPDATE = 2;
+
 typedef void (*LLW32MsgCallback)(const MSG &msg);
 
 class LLWindowWin32 : public LLWindow
@@ -56,7 +62,11 @@ public:
     void restore() override;
     bool getFullscreen();
     bool getPosition(LLCoordScreen *position) override;
+
+    // Outer window frame size in pixels (includes title bar and borders).
+    // Note OS Specific behavior: On macOS excludes title bar.
     bool getSize(LLCoordScreen *size) override;
+
     bool getSize(LLCoordWindow *size) override;
     bool setPosition(LLCoordScreen position) override;
     bool setSizeImpl(LLCoordScreen size) override;
@@ -125,8 +135,10 @@ public:
 
     LLWindowCallbacks::DragNDropResult completeDragNDropRequest( const LLCoordGL gl_coord, const MASK mask, LLWindowCallbacks::DragNDropAction action, const std::string url );
 
+    static PROC WINAPI getProcAddress(const char* func);
     static std::vector<std::string> getDisplaysResolutionList();
     static std::vector<std::string> getDynamicFallbackFontList();
+    static LLFontFallbackMatch findFallbackFontForChar(llwchar wch);
     static void setDPIAwareness();
 
     void* getDirectInput8() override;
@@ -151,6 +163,8 @@ protected:
     void    initCursors(bool useLegacyCursors); // <FS:LO> Legacy cursor setting from main program
     HCURSOR loadColorCursor(LPCTSTR name);
     bool    isValid();
+    void    setThreadPriorityHigh();
+    void    setThreadPriorityNormal();
     void    moveWindow(const LLCoordScreen& position,const LLCoordScreen& size);
     virtual LLSD    getNativeKeyData();
 
@@ -172,6 +186,17 @@ protected:
     void    handleStartCompositionMessage();
     void    handleCompositionMessage(U32 indexes);
     bool    handleImeRequests(WPARAM request, LPARAM param, LRESULT *result);
+
+    // Additional function to request and hold a high-performance GPU on Windows 10+
+    //
+    // Laptops can dynamically switch between integrated and discrete GPUs.
+    // The Viewer has gpu-specific optimizations, and this switching can cause problems and crashes.
+    // The login screen requires low performance, which can lead to the OS deciding to switch to the integrated GPU.
+    // To avoid this, we request and hold a high-performance GPU using A D3D11 context until login.
+    // For diagnostics, we also log GPU changes.
+    void    requestHighPerformanceGPU() const;
+    bool    detectGPUChange() const;
+    void    clearHighPerformanceGPURequest() const;
 
 protected:
     //
@@ -222,6 +247,7 @@ protected:
     LPWSTR      mIconResource;
     LPWSTR      mIconSmallResource;
     bool        mInputProcessingPaused;
+    bool        mReceivedSCClose; // received SC_CLOSE and expecting WM_CLOSE
 
     // The following variables are for Language Text Input control.
     // They are all static, since one context is shared by all LLWindowWin32
@@ -247,6 +273,8 @@ protected:
     U32             mRawLParam;
 
     bool            mMouseVanish;
+
+    static HMODULE sGLDLLHandle;
 
     // Cached values of GetWindowRect and GetClientRect to be used by app thread
     void updateWindowRect();

@@ -236,12 +236,18 @@
 				Ausgabegerät:
 			</text>
 		</panel>
-
+		<text name="bluetooth_lbl">
+			Nur Bluetooth
+		</text>
+		<radio_group name="bluetooth_behavior">
+			<radio_item label="Besseres Voice" name="better_voice"/>
+			<radio_item label="Besseres In-World-Audio" name="better_audio"/>
+		</radio_group>
 	</panel>
 
 	<!-- Media -->
 	<panel label="Medien" name="Media Media Panel">
-		<text width="190" name="media_autoplay_label">
+		<text width="210" name="media_autoplay_label">
 			Automatische Medien-Wiedergabe
 		</text>
 		<combo_box name="media_auto_play_combo" width="100">

@@ -62,7 +62,6 @@
 #include "llsdserialize.h"
 #include "llsdutil.h"
 #include "llcorehttputil.h"
-#include "llvoicevivox.h"
 #include "llinventorymodel.h"
 #include "lluiusage.h"
 #include "lltranslate.h"
@@ -238,6 +237,8 @@ LLTrace::SampleStatHandle<F64Milliseconds > FRAMETIME_JITTER("frametimejitter", 
 LLTrace::SampleStatHandle<U32> FRAMETIME_JITTER_EVENTS("frametimeevents", "Number of frametime events in the session.  Applies when jitter exceeds 10% of the previous frame."),
                                 FRAMETIME_JITTER_EVENTS_PER_MINUTE("frametimeeventspm", "Average number of frametime events per minute."),
                                 FRAMETIME_JITTER_EVENTS_LAST_MINUTE("frametimeeventslastmin", "Number of frametime events in the last minute.");
+
+LLTrace::SampleStatHandle<U64> DOFRAME_TIME_US("doframetimeus", "doFrame wall time in microseconds.");
 
 LLTrace::SampleStatHandle<F64> NOTRMALIZED_FRAMETIME_JITTER_SESSION("normalizedframetimejitter", "Normalized frametime jitter over the session.");
 LLTrace::SampleStatHandle<F64> NFTV("nftv", "Normalized frametime variation.");
@@ -729,6 +730,8 @@ void send_viewer_stats(bool include_preferences)
     system["os"] = LLOSInfo::instance().getOSStringSimple();
     system["cpu"] = gSysCPU.getCPUString();
     system["cpu_sse"] = gSysCPU.getSSEVersions();
+    system["cpu_simd"] = gSysCPU.getSIMDVersions();
+    system["cpu_mhz"] = gSysCPU.getMHz();
     system["address_size"] = ADDRESS_SIZE;
     system["os_bitness"] = LLOSInfo::instance().getOSBitness();
     system["hardware_concurrency"] = (LLSD::Integer) std::thread::hardware_concurrency();
@@ -751,6 +754,19 @@ void send_viewer_stats(bool include_preferences)
     system["gpu_vendor"] = gGLManager.mGLVendorShort;
     system["gpu_version"] = gGLManager.mDriverVersionVendorString;
     system["opengl_version"] = gGLManager.mGLVersionString;
+    system["gpu_vram_mb"] = (S32)gGLManager.mVRAM;
+    system["glsl_version"] = llformat("%d.%d", gGLManager.mGLSLVersionMajor, gGLManager.mGLSLVersionMinor);
+
+    // Resource usage
+    // getAvailableMemKB might be a bit stale, but that's fine, this is statistics,
+    // not a debug tool.
+    // TODO: 26.3 branch introduced getAvailableCommitMemMB, use that on windows
+    system["ram_avail_mb"] = (S32Megabytes)(LLMemory::getAvailableMemKB()).value();
+    system["ram_allocated_mb"] = (S32Megabytes)(LLMemory::getAllocatedMemKB()).value();
+    static constexpr F64 BYTES_TO_MB = 1024.0 * 1024.0;
+    F64 texture_bytes_alloc = LLImageGL::getTextureBytesAllocated() / BYTES_TO_MB;
+    F64 vertex_bytes_alloc = LLVertexBuffer::getBytesAllocated() / BYTES_TO_MB;
+    system["gpu_vram_tracked_mb"] = (F32)(texture_bytes_alloc + vertex_bytes_alloc);
 
     gGLManager.asLLSD(system["gl"]);
 
@@ -806,7 +822,7 @@ void send_viewer_stats(bool include_preferences)
     LLSD &fail = body["stats"]["failures"];
 
     fail["send_packet"] = (S32) gMessageSystem->mSendPacketFailureCount;
-    fail["dropped"] = (S32) gMessageSystem->mDroppedPackets;
+    fail["dropped"] = (S32) gMessageSystem->getTotalNumDroppedPackets();
     fail["resent"] = (S32) gMessageSystem->mResentPackets;
     fail["failed_resends"] = (S32) gMessageSystem->mFailedResendPackets;
     fail["off_circuit"] = (S32) gMessageSystem->mOffCircuitPackets;
@@ -824,8 +840,6 @@ void send_viewer_stats(bool include_preferences)
 
     // <FS:Ansariel> We do not need to send UI usage stats according to Jess...
     //body["ui"] = LLUIUsage::instance().asLLSD();
-
-    body["stats"]["voice"] = LLVoiceVivoxStats::getInstance()->read();
 
     // Misc stats, two strings and two ints
     // These are not expecticed to persist across multiple releases

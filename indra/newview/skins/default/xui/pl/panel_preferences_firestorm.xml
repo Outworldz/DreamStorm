@@ -38,6 +38,14 @@
         <slider name="manual_environment_change_transition_period" label="Czas przejścia otoczenia:" tool_tip="Interwał w sekundach, w czasie którego ręczne zmiany środowiska będą zachodzić. Zero oznacza natychmiast." />
         <check_box name="EnvironmentPersistAcrossLogin" label="Trzymaj ustawienia otoczenia pomiędzy sesjami" tool_tip="Przywraca aktualne ustawienia otoczenia po następnym zalogowaniu." />
         <check_box name="FSRepeatedEnvTogglesShared" label="Skróty klawiszowe zmiany otocz. przy powtarzaniu przełączają na otocz. współdzielone" tool_tip="Sprawia, że powielone używanie skrótów klawiszowych (np. ctrl+shift+y) przełącza między wybranym wstępnie zapisanym otoczeniem, a otoczeniem współdzielonym." />
+		<text name="FSCloudColorLabel">
+			Kolor chmurki błędu ładowania awatara:
+		</text>
+		<text name="FSCloudColorEndLabel">
+			Koniec:
+		</text>
+		<color_swatch name="FSCloudColorStart" tool_tip="Kolor początkowy &quot;chmurki&quot; cząsteczek wyświetlanej podczas ładowania awatara lub w przypadku niepowodzenia procesu jego renderowania (tzw. bake'owania). Zmiana wprowadzana jest natychmiast, bez konieczności restartu." />
+		<color_swatch name="FSCloudColorEnd" tool_tip="Kolor końcowy &quot;chmurki&quot; cząsteczek wyświetlanej podczas ładowania awatara lub w przypadku niepowodzenia procesu jego renderowania (tzw. bake'owania). Zmiana wprowadzana jest natychmiast, bez konieczności restartu." />
     </panel>
     <panel label="Ochrona" name="ProtectionTab">
         <check_box label="Blokuj siadanie na obiektach przez kliknięcie lewym przyciskiem myszy" name="FSBlockClickSit" />
@@ -159,11 +167,14 @@
          Obecnie: [ITEM]
         </text>
         <check_box name="FSBuildPrefs_UseCustomScript" label="Własny skrypt pod guzikiem Nowy Skrypt"/>
-        <fs_embedded_item_drop_target name="custom_script" tool_tip="Upuść skrypt w tym miejscu.">
-         Upuść skrypt w tym miejscu.
+        <fs_embedded_item_drop_target name="custom_script" tool_tip="Upuść skrypt LSL lub Lua w tym miejscu.">
+         Upuść skrypt LSL lub Lua w tym miejscu.
         </fs_embedded_item_drop_target>
         <text name="custom_script_disp_rect_txt">
-         Obecnie: [SCRIPT]
+         Skrypt LSL: [SCRIPT]
+        </text>
+        <text name="custom_lua_script_disp_rect_txt">
+         Skrypt Lua: [SCRIPT]
         </text>
         <button label="Domyślne uprawnienia tworzenia" name="fs_default_creation_permissions" />
         <check_box label="Podświetlanie wybranych primów" tool_tip="Gdy odznaczysz tą opcję, to żółte/niebieskie podświetlenia krawędzi nie są renderowane - zwiększa wydajność, gdy zaznaczonych jest wiele primów." name="FSBuildPrefsRenderHighlight_toggle" />
@@ -203,18 +214,35 @@
         <check_box label="Włącz rozszerzanie funkcjonalności informacji o skryptach" tool_tip="Gdy zaznaczysz tą opcję, to podstawowa funkcjonalność informacji o skryptach zostanie rozszerzona za pomocą różnych szczegółów przydatnych dla budowniczych" name="FSScriptInfoExtended" />
         <check_box label="Sortuj miejsca dodatków w sekcjach menu &quot;Dołącz do&quot; alfabetycznie (wymaga restartu)" tool_tip="Jeśli ta opcja jest włączona, to lista miejsc dla doczepienia dodatków pojawiająca się w menusach &quot;Dołącz do&quot; będzie posortowana alfabetycznie" name="FSSortAttachmentSpotsAlphabetically" />
         <check_box label="Nowy panel tekstur [APP_NAME] w panelu budowania (wymaga restartu)" tool_tip="Gdy zaznaczysz tą opcję, to narzędzia do edycji tekstur będą korzystać z udoskonalonego panelu [APP_NAME] i pozwolą na edycję tekstur BlinnPhong oraz PBR." name="FSUseNewTexturePanel" />
+		<text name="buildaxiscolors_label">
+			Wygląd osi X/Y/Z:
+		</text>
+		<color_swatch label="Oś X" name="colorswatchXaxis" tool_tip="Kliknij, wybrać kolor" />
+		<color_swatch label="Oś Y" name="colorswatchYaxis" tool_tip="Kliknij, wybrać kolor" />
+		<color_swatch label="Oś Z" name="colorswatchZaxis" tool_tip="Kliknij, wybrać kolor" />
+		<color_swatch label="Tło tekstu" name="colorswatchEditTextBackgroundColor" tool_tip="Kliknij, wybrać kolor" />
+		<spinner label="Skala" name="editWidgetScaling" tool_tip="Określa skalę elementów sterujących używanych do edycji obrotu, skali i położenia." />
+		<check_box label="Cień tekstu" tool_tip="Jeśli opcja jest włączona, tekst pomocniczy podczas edycji będzie miał cień." name="editTextDropShadow" />
     </panel>
     <panel label="Edytor skryptów" name="BuildTabScriptEditor">
         <text name="text_box_scripting_font" width="150">
             Czcionka edytora skryptów:
         </text>
         <combo_box name="FSScriptingFontName" tool_tip="Nazwa czcionki używanej w edytorze skryptów LSL" />
+		<text name="text_box_scripting_font_size">
+			Rozmiar:
+		</text>
         <combo_box name="FSScriptingFontSize" tool_tip="Rozmiar czcionki używanej w edytorze skryptów LSL">
             <combo_item name="Small" label="Mała"/>
             <combo_item name="Medium" label="Średnia"/>
             <combo_item name="Large" label="Duża"/>
         </combo_box>
         <check_box label="Zapisuj skrypty edytowane w Szafie jako Mono" tool_tip="Gdy zaznaczone, to wszystkie skrypty edytowane w Szafie są zapisywane jako Mono zamiast LSL." name="FSSaveInventoryScriptsAsMono_toggle" />
+		<check_box label="Synchronizuj WebSocket" name="websocket_sync_enable" />
+		<text name="websocket_tip">
+			Port WebSocket:
+		</text>
+		<check_box label="Przekazuj błędy skryptów i debug do klientów WebSocket" name="websocket_forward_debug" />
         <check_box label="Włącz preprocesor LSL" tool_tip="Preprocesor LSL będzie aktywny, gdy ta opcja zostanie zaznaczona." name="preproc_checkbox" />
         <check_box label="Optymalizator" tool_tip="Gdy ta opcja zostanie zaznaczona, to preprocesor będzie LSL optymalizować miejsce zajmowane przez skrypty." name="preprocoptimizer_checkbox" />
         <check_box label="Instrukcja switch()" tool_tip="Gdy ta opcja zostanie zaznaczona, to preprocesor LSL pozwoli na korzystanie z instrukcji switch() do sterowania przepływem skryptu." name="preprocswitch_checkbox" />
@@ -228,6 +256,7 @@
           Zewnętrzny edytor:
         </text>
         <button label="Przeglądaj" label_selected="Przeglądaj" name="SetExternalEditor" />
+		<check_box label="Integracja z VS Code" name="tight_integration" />
     </panel>
     <panel label="Nowe pliki" name="UploadsTab">
         <text name="title">

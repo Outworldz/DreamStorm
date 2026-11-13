@@ -37,6 +37,7 @@
 #include "llglslshader.h"
 #include "llmemory.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <atomic> // </FS:Beq> Unique layout identities across render threads.
 
 //Next Highest Power Of Two
 //helper function, returns first number > v that is a power of 2, or v if v is already a power of 2
@@ -297,18 +298,21 @@ static void delete_buffers(S32 count, GLuint* buffers)
     LL_PROFILE_ZONE_SCOPED_CATEGORY_VERTEX;
     // wait a few frames before actually deleting the buffers to avoid
     // synchronization issues with the GPU
-    static std::vector<GLuint> sFreeList[4];
+    constexpr U32 BUCKET_COUNT = 4;
+    static std::vector<GLuint> sFreeList[BUCKET_COUNT];
 
     if (gGLManager.mInited)
     {
-        U32 idx = LLImageGL::sFrameCount % 4;
+        // Move current frame to free list
+        U32 idx = LLImageGL::sFrameCount % BUCKET_COUNT;
 
         for (S32 i = 0; i < count; ++i)
         {
             sFreeList[idx].push_back(buffers[i]);
         }
 
-        idx = (LLImageGL::sFrameCount + 3) % 4;
+        // Clear frame -3 (equals +1), this idx will be written over on the next call
+        idx = (LLImageGL::sFrameCount + 1) % BUCKET_COUNT;
 
         if (!sFreeList[idx].empty())
         {
@@ -683,6 +687,25 @@ U32 LLVertexBuffer::sGLRenderIndices = 0;
 U32 LLVertexBuffer::sLastMask = 0;
 U32 LLVertexBuffer::sVertexCount = 0;
 
+// <FS:Beq> Track configured attributes separately from upload bindings.
+namespace
+{
+    std::atomic<U64> sNextAttributeLayoutID{0};
+    // Each rendering thread owns its VAO. New-VAO setup and unbind invalidate
+    // this cache; binding a buffer for allocation/uploads must not update it.
+    thread_local U64 sConfiguredAttributeLayoutID = 0;
+    thread_local U32 sConfiguredAttributeBuffer = 0;
+    thread_local U32 sConfiguredAttributeMask = 0;
+
+    U64 nextAttributeLayoutID()
+    {
+        const U64 id = sNextAttributeLayoutID.fetch_add(1, std::memory_order_relaxed) + 1;
+        llassert_always(id != 0);
+        return id;
+    }
+}
+// </FS:Beq>
+
 
 //NOTE: each component must be AT LEAST 4 bytes in size to avoid a performance penalty on AMD hardware
 const U32 LLVertexBuffer::sTypeSize[LLVertexBuffer::TYPE_MAX] =
@@ -904,11 +927,22 @@ void LLVertexBuffer::setLabel(const char* label) {
 
 void LLVertexBuffer::clone(LLVertexBuffer& target) const
 {
+    // <FS:Beq> A same-sized clone can still change attribute offsets.
+    const bool layout_changed = target.mTypeMask != mTypeMask;
+    // </FS:Beq>
     target.mTypeMask = mTypeMask;
     target.mIndicesType = mIndicesType;
     target.mIndicesStride = mIndicesStride;
-    if (target.getNumVerts() != getNumVerts() ||
+    // <FS:Beq> Recalculate offsets even when the allocation size stays the same.
+    // if (target.getNumVerts() != getNumVerts() ||
+    //     target.getNumIndices() != getNumIndices())
+    if (layout_changed)
+    {
+        target.mAttributeLayoutID = nextAttributeLayoutID();
+    }
+    if (layout_changed || target.getNumVerts() != getNumVerts() ||
         target.getNumIndices() != getNumIndices())
+    // </FS:Beq>
     {
         target.allocateBuffer(getNumVerts(), getNumIndices());
     }
@@ -956,12 +990,14 @@ void LLVertexBuffer::initClass(LLWindow* window)
 {
     llassert(sVBOPool == nullptr);
 
+#if LL_DARWIN || LL_ARM64
     if (gGLManager.mIsApple)
     {
         LL_INFOS() << "VBO Pooling Disabled" << LL_ENDL;
         sVBOPool = new LLAppleVBOPool();
     }
     else
+#endif
     {
         LL_INFOS() << "VBO Pooling Enabled" << LL_ENDL;
         sVBOPool = new LLDefaultVBOPool();
@@ -987,7 +1023,18 @@ void LLVertexBuffer::unbind()
     STOP_GLERROR;
     sGLRenderBuffer = 0;
     sGLRenderIndices = 0;
+    invalidateAttributeSetup(); // </FS:Beq> Unbind invalidates the configured layout.
 }
+
+// <FS:Beq> Invalidate cached attribute pointers without changing GL state.
+//static
+void LLVertexBuffer::invalidateAttributeSetup()
+{
+    sConfiguredAttributeLayoutID = 0;
+    sConfiguredAttributeBuffer = 0;
+    sConfiguredAttributeMask = 0;
+}
+// </FS:Beq>
 
 //static
 void LLVertexBuffer::cleanupClass()
@@ -1015,7 +1062,11 @@ void LLVertexBuffer::cleanupClass()
 
 LLVertexBuffer::LLVertexBuffer(U32 typemask)
 :   LLRefCount(),
-    mTypeMask(typemask)
+    // <FS:Beq> A recycled GL name is not a unique layout identity.
+    // mTypeMask(typemask)
+    mTypeMask(typemask),
+    mAttributeLayoutID(nextAttributeLayoutID())
+    // </FS:Beq>
 {
     //zero out offsets
     for (U32 i = 0; i < TYPE_MAX; i++)
@@ -1119,6 +1170,7 @@ void LLVertexBuffer::genBuffer(U32 size)
 
         mSize = size;
         sVBOPool->allocate(GL_ARRAY_BUFFER, mSize, mGLBuffer, mMappedData);
+        mAttributeLayoutID = nextAttributeLayoutID(); // </FS:Beq> New/replaced vertex storage.
     }
 }
 
@@ -1188,6 +1240,20 @@ void LLVertexBuffer::destroyGLBuffer()
     if (mGLBuffer || mMappedData)
     {
         LL_PROFILE_ZONE_SCOPED_CATEGORY_VERTEX;
+        // <FS:Beq> Port secondlife/viewer#6576 (i-doll); keep separate from layout tracking.
+        // The pool hands this name straight to the next buffer of the same size, which
+        // would then skip binding and setupVertexBuffer() and draw with our attribute offsets.
+        if (mGLBuffer && mGLBuffer == sGLRenderBuffer)
+        {
+            sGLRenderBuffer = 0;
+        }
+        // </FS:Beq>
+        // <FS:Beq> Retire the configured layout independently of the upload binding.
+        if (sConfiguredAttributeLayoutID == mAttributeLayoutID)
+        {
+            invalidateAttributeSetup();
+        }
+        // </FS:Beq>
         //llassert(sVBOPool);
         if (sVBOPool)
         {
@@ -1205,6 +1271,13 @@ void LLVertexBuffer::destroyGLIndices()
     if (mGLIndices || mMappedIndexData)
     {
         LL_PROFILE_ZONE_SCOPED_CATEGORY_VERTEX;
+        // <FS:Beq> Port secondlife/viewer#6576 (i-doll); keep separate from layout tracking.
+        // Same for indices: the next owner of this name must bind it.
+        if (mGLIndices && mGLIndices == sGLRenderIndices)
+        {
+            sGLRenderIndices = 0;
+        }
+        // </FS:Beq>
         //llassert(sVBOPool);
         if (sVBOPool)
         {
@@ -1229,6 +1302,12 @@ bool LLVertexBuffer::updateNumVerts(U32 nverts)
     {
         success &= createGLBuffer(needed_size);
     }
+    // <FS:Beq> Vertex-count changes can move offsets without replacing storage.
+    else if (nverts != mNumVerts)
+    {
+        mAttributeLayoutID = nextAttributeLayoutID();
+    }
+    // </FS:Beq>
 
     llassert(mSize == needed_size);
     mNumVerts = nverts;
@@ -1299,7 +1378,12 @@ U8* LLVertexBuffer::mapVertexBuffer(LLVertexBuffer::AttributeType type, U32 inde
         count = mNumVerts - index;
     }
 
+#if LL_DARWIN || LL_ARM64
+    // Region tracking not needed on apple silicon - it recreates entire buffer
+    // While mIsApple can be encountered under windows, this is a
+    // macOS OpenGL behavior workaround. LL_ARM64 check might be not needed
     if (!gGLManager.mIsApple)
+#endif
     {
         U32 start = mOffsets[type] + sTypeSize[type] * index;
         U32 end = start + sTypeSize[type] * count-1;
@@ -1336,7 +1420,9 @@ U8* LLVertexBuffer::mapIndexBuffer(U32 index, S32 count)
         count = mNumIndices-index;
     }
 
+#if LL_DARWIN || LL_ARM64
     if (!gGLManager.mIsApple)
+#endif
     {
         U32 start = sizeof(U16) * index;
         U32 end = start + sizeof(U16) * count-1;
@@ -1371,6 +1457,7 @@ U8* LLVertexBuffer::mapIndexBuffer(U32 index, S32 count)
 //  dst -- mMappedData or mMappedIndexData
 void LLVertexBuffer::flush_vbo(GLenum target, U32 start, U32 end, void* data, U8* dst)
 {
+#if LL_DARWIN || LL_ARM64
     if (gGLManager.mIsApple)
     {
         // on OS X, flush_vbo doesn't actually write to the GL buffer, so be sure to call
@@ -1382,6 +1469,7 @@ void LLVertexBuffer::flush_vbo(GLenum target, U32 start, U32 end, void* data, U8
         memcpy(dst+start, data, end-start+1);
     }
     else
+#endif
     {
         llassert(target == GL_ARRAY_BUFFER ? sGLRenderBuffer == mGLBuffer : sGLRenderIndices == mGLIndices);
 
@@ -1437,6 +1525,7 @@ void LLVertexBuffer::_unmapBuffer()
         }
     };
 
+#if LL_DARWIN || LL_ARM64
     if (gGLManager.mIsApple)
     {
         STOP_GLERROR;
@@ -1447,6 +1536,7 @@ void LLVertexBuffer::_unmapBuffer()
                 delete_buffers(1, &mGLBuffer);
             }
             mGLBuffer = gen_buffer();
+            mAttributeLayoutID = nextAttributeLayoutID(); // </FS:Beq> Apple uploads replace the GL object.
             glBindBuffer(GL_ARRAY_BUFFER, mGLBuffer);
             sGLRenderBuffer = mGLBuffer;
             glBufferData(GL_ARRAY_BUFFER, mSize, mMappedData, GL_STATIC_DRAW);
@@ -1479,6 +1569,7 @@ void LLVertexBuffer::_unmapBuffer()
         STOP_GLERROR;
     }
     else
+#endif // LL_DARWIN || LL_ARM64
     {
         if (!mMappedVertexRegions.empty())
         {
@@ -1700,18 +1791,34 @@ void LLVertexBuffer::setBuffer()
         "Attribute mask mismatch! mTypeMask should be a superset of data_mask.  data_mask: 0x"
                 << std::hex << data_mask << " mTypeMask: 0x" << mTypeMask << " Missing: 0x" << (data_mask & ~mTypeMask) <<  std::dec);
 
+    // <FS:Beq> Do not mistake allocation/upload bindings for configured draw pointers.
+    // if (sGLRenderBuffer != mGLBuffer)
+    // {
+    //     glBindBuffer(GL_ARRAY_BUFFER, mGLBuffer);
+    //     sGLRenderBuffer = mGLBuffer;
+    //
+    //     setupVertexBuffer();
+    // }
+    // else if (sLastMask != data_mask)
+    // {
+    //     setupVertexBuffer();
+    //     sLastMask = data_mask;
+    // }
     if (sGLRenderBuffer != mGLBuffer)
     {
         glBindBuffer(GL_ARRAY_BUFFER, mGLBuffer);
         sGLRenderBuffer = mGLBuffer;
-
-        setupVertexBuffer();
     }
-    else if (sLastMask != data_mask)
+
+    // Upload binding, attribute enables and attribute pointers are independent
+    // state. Only setupVertexBuffer() can mark this layout/mask as configured.
+    if (sConfiguredAttributeLayoutID != mAttributeLayoutID
+        || sConfiguredAttributeBuffer != mGLBuffer
+        || sConfiguredAttributeMask != data_mask)
     {
         setupVertexBuffer();
-        sLastMask = data_mask;
     }
+    // </FS:Beq>
 
     if (mGLIndices != sGLRenderIndices)
     {
@@ -1822,6 +1929,11 @@ void LLVertexBuffer::setupVertexBuffer()
         void* ptr = (void*)(base + mOffsets[TYPE_VERTEX]);
         glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, LLVertexBuffer::sTypeSize[TYPE_VERTEX], ptr);
     }
+    // <FS:Beq> Record only the layout whose pointers were actually submitted.
+    sConfiguredAttributeLayoutID = mAttributeLayoutID;
+    sConfiguredAttributeBuffer = mGLBuffer;
+    sConfiguredAttributeMask = data_mask;
+    // </FS:Beq>
     STOP_GLERROR;
 }
 
