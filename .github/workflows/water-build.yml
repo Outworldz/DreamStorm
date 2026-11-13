@@ -64,8 +64,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-14 g++-14 python3-setuptools mesa-common-dev libgl1-mesa-dev \
-            libglu1-mesa-dev libxinerama-dev libxrandr-dev libpulse-dev libfreetype6-dev libfontconfig1-dev
+          # same list as upstream build_viewer.yml (7.3 needs libvlc-dev, wayland, pipewire, gstreamer...)
+          sudo apt-get install -y gcc-14 g++-14 python3-setuptools pkg-config ninja-build mesa-common-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libosmesa6-dev libxinerama-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxft-dev libpulse-dev libunwind-dev libpipewire-0.3-dev libdbus-1-dev libglib2.0-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libvlc-dev libwayland-dev libfreetype6-dev \
+            libfontconfig1-dev
           echo "CC=gcc-14" >> $GITHUB_ENV
           echo "CXX=g++-14" >> $GITHUB_ENV
 
