@@ -81,6 +81,12 @@ jobs:
         run: autobuild build -c ReleaseFS_open -A64 --no-configure
         shell: bash
 
+      # 7.3 viewer_manifest.py writes the Linux tar to RUNNER_TEMP on GitHub runners
+      - name: Fetch the Linux tar
+        if: runner.os == 'Linux'
+        run: mv "$RUNNER_TEMP"/*.tar.xz build-linux-*/newview/
+        shell: bash
+
       - name: List results
         run: ls -la build-*/newview/*.xz build-*/newview/*.dmg 2>/dev/null || ls -la build-*/newview
         shell: bash
