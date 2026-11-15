@@ -97,6 +97,7 @@ jobs:
         with:
           name: DreamStorm-linux
           path: build-linux-*/newview/*.tar.xz
+          if-no-files-found: error
 
       - name: Upload artifacts (macOS)
         if: runner.os == 'macOS'
@@ -104,12 +105,18 @@ jobs:
         with:
           name: DreamStorm-macos
           path: build-darwin-*/newview/*.dmg
+          if-no-files-found: error
 
       - name: Attach to release
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files=$(ls build-linux-*/newview/*.tar.xz build-darwin-*/newview/*.dmg 2>/dev/null || true)
-          gh release upload "${{ inputs.release_tag }}" $files --clobber
+          shopt -s nullglob
+          files=(build-linux-*/newview/*.tar.xz build-darwin-*/newview/*.dmg)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No package found to attach (build-linux-*/newview/*.tar.xz or build-darwin-*/newview/*.dmg)"
+            exit 1
+          fi
+          gh release upload "${{ inputs.release_tag }}" "${files[@]}" --clobber
         shell: bash
