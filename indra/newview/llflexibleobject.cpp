@@ -231,7 +231,48 @@ void LLVolumeImplFlexible::remapSections(LLFlexibleObjectSection *source, S32 so
     }
 }
 
-// <FS:Outworldz> FlexiFix: floor height in agent Z under pos_agent, or -F32_MAX.
+// <FS:Outworldz> FlexiFix: floor collision helpers
+namespace
+{
+    // Half of a section's cross-section extent along world Z. The profile is
+    // scale.x by scale.y in the section's local X/Y plane, turned by rot (axis
+    // twist * section rotation, as the path point is drawn). Box bound, so it
+    // also covers round profiles.
+    F32 ds_flexi_half_height(const LLVector2& scale, const LLQuaternion& rot)
+    {
+        const LLVector3 ex = LLVector3::x_axis * rot;
+        const LLVector3 ey = LLVector3::y_axis * rot;
+        return 0.5f * (scale.mV[0] * fabsf(ex.mV[VZ]) + scale.mV[1] * fabsf(ey.mV[VZ]));
+    }
+
+    // If pos (len from parent) is below min_z, swing it up about parent so its
+    // Z is min_z (or straight up if that is out of reach), keeping the distance
+    // to parent and the sideways heading. Returns true if pos was moved.
+    bool ds_flexi_lift_keep_length(const LLVector3& parent, LLVector3& pos, F32 len,
+                                   F32 min_z, const LLVector3& fallback_heading)
+    {
+        if (pos.mV[VZ] >= min_z || len <= 0.f)
+        {
+            return false;
+        }
+        const F32 dz = llclamp(min_z - parent.mV[VZ], -len, len);
+        LLVector3 heading(pos.mV[VX] - parent.mV[VX], pos.mV[VY] - parent.mV[VY], 0.f);
+        if (heading.magVecSquared() < 1.e-12f)
+        {
+            heading.setVec(fallback_heading.mV[VX], fallback_heading.mV[VY], 0.f);
+        }
+        if (heading.magVecSquared() < 1.e-12f)
+        {
+            heading = LLVector3::x_axis;
+        }
+        heading.normVec();
+        const F32 horizontal = sqrtf(llmax(len * len - dz * dz, 0.f));
+        pos = parent + heading * horizontal + LLVector3(0.f, 0.f, dz);
+        return true;
+    }
+}
+
+// FlexiFix: floor height in agent Z under pos_agent, or -F32_MAX.
 F32 LLVolumeImplFlexible::sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
                                        bool use_terrain, const LLVOAvatar* avatarp) const
 {
@@ -590,6 +631,7 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     static LLCachedControl<bool> terrain_collision(gSavedSettings, "DSFlexiTerrainCollision", false);
     static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", false);
     static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 0.5f);
+    static LLCachedControl<F32> floor_offset_setting(gSavedSettings, "DSFlexiFloorOffset", 0.02f);
     const bool use_terrain = terrain_collision;
     const LLVOAvatar* floor_avatarp = nullptr;
     if (foot_plane_floor && mVO->isAttachment())
@@ -604,12 +646,16 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     const bool collide_floor = use_terrain || floor_avatarp;
     LLViewerRegion* floor_regionp = nullptr;
     F32 ground_friction = 0.f;
+    F32 floor_offset = 0.f;
+    LLVector3 floor_heading; // which way a section straight below its parent falls over
     if (collide_floor)
     {
         // One region lookup per object per update; sampleFloorZ falls back
         // to a per-point lookup only for points outside this region.
         floor_regionp = LLWorld::getInstance()->getRegionFromPosAgent(AnchorPosition);
         ground_friction = llclamp((F32) ground_friction_setting, 0.f, 1.f);
+        floor_offset = llclamp((F32) floor_offset_setting, -0.5f, 0.5f);
+        floor_heading = LLVector3::x_axis * BaseRotation;
     }
     // </FS:Outworldz>
 
@@ -697,13 +743,15 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
         //------------------------------------------------------------------------------------------
         mSection[i].mPosition += mSection[i].mVelocity * momentum;
 
-        // <FS:Outworldz> FlexiFix: floor collision. Done before the length/angle
-        // clamp below so the section rotations stay consistent.
+        // <FS:Outworldz> FlexiFix: floor collision, first pass. Lifts the free
+        // position before the length/angle clamp; the clamp can pull it back
+        // down, so a second pass follows the clamp. The margin is the section's
+        // half-height along world Z (last frame's orientation) plus DSFlexiFloorOffset.
         if (collide_floor)
         {
-            const LLVector2& sect_scale = mSection[i].mScale;
-            const F32 margin = 0.5f * llmin(sect_scale.mV[0], sect_scale.mV[1]);
             const F32 floor_z = sampleFloorZ(floor_regionp, mSection[i].mPosition, use_terrain, floor_avatarp);
+            const F32 margin = floor_offset +
+                ds_flexi_half_height(mSection[i].mScale, mSection[i].mAxisRotation * mSection[i].mRotation);
             if (floor_z > -F32_MAX && mSection[i].mPosition.mV[VZ] < floor_z + margin)
             {
                 mSection[i].mPosition.mV[VZ] = floor_z + margin;
@@ -741,6 +789,33 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
         mSection[i].mDirection = (parentDirection * deltaRotation);
         mSection[i].mPosition = parentSectionPosition + mSection[i].mDirection * section_length;
         mSection[i].mRotation = segment_rotation;
+
+        // <FS:Outworldz> FlexiFix: floor collision, second pass. The bend limit
+        // (max_angle) above can leave a section still heading down through the
+        // floor; swing it up about its parent, keeping the section length, and
+        // turn its direction and rotation by the same amount.
+        if (collide_floor)
+        {
+            const F32 floor_z = sampleFloorZ(floor_regionp, mSection[i].mPosition, use_terrain, floor_avatarp);
+            if (floor_z > -F32_MAX)
+            {
+                const F32 min_z = floor_z + floor_offset +
+                    ds_flexi_half_height(mSection[i].mScale, mSection[i].mAxisRotation * mSection[i].mRotation);
+                LLVector3 lifted = mSection[i].mPosition;
+                if (ds_flexi_lift_keep_length(parentSectionPosition, lifted, section_length, min_z, floor_heading))
+                {
+                    LLVector3 lifted_dir = lifted - parentSectionPosition;
+                    lifted_dir.normVec();
+                    LLQuaternion lift_rotation;
+                    lift_rotation.shortestArc(mSection[i].mDirection, lifted_dir);
+                    mSection[i].mDirection = lifted_dir;
+                    mSection[i].mPosition = lifted;
+                    mSection[i].mRotation = mSection[i].mRotation * lift_rotation;
+                    parentSegmentRotation = mSection[i].mRotation;
+                }
+            }
+        }
+        // </FS:Outworldz>
 
         if (i > 1)
         {
@@ -808,6 +883,28 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
     static LLCachedControl<U32> extra_sim_twist(gSavedSettings, "DSFlexiExtraSimSubdivisions", 0);
     const bool remapped_twist = ((U32) extra_render_twist > 0) || ((U32) extra_sim_twist > 0);
+    // </FS:Outworldz>
+
+    // <FS:Outworldz> FlexiFix: floor collision for the drawn points. The cubic
+    // remap between simulated sections can bulge below them, and terrain between
+    // two sections can be higher than under either, so lift each drawn point too.
+    if (collide_floor)
+    {
+        for (i = 1; i <= num_render_sections; ++i)
+        {
+            const F32 floor_z = sampleFloorZ(floor_regionp, newSection[i].mPosition, use_terrain, floor_avatarp);
+            if (floor_z > -F32_MAX)
+            {
+                const LLQuaternion& twist = remapped_twist ? newSection[i].mAxisRotation : mSection[i].mAxisRotation;
+                const F32 min_z = floor_z + floor_offset +
+                    ds_flexi_half_height(newSection[i].mScale, twist * newSection[i].mRotation);
+                if (newSection[i].mPosition.mV[VZ] < min_z)
+                {
+                    newSection[i].mPosition.mV[VZ] = min_z;
+                }
+            }
+        }
+    }
     // </FS:Outworldz>
 
     //generate transform from global to prim space
