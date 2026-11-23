@@ -42,6 +42,7 @@
 #include "llviewerregion.h"
 #include "llworld.h"
 #include "llvoavatar.h"
+#include "llsurface.h" // <FS:Outworldz/> FlexiFix: terrain height
 
 static const F32 SEC_PER_FLEXI_FRAME = 1.f / 60.f; // 60 flexi updates per second
 /*static*/ F32 LLVolumeImplFlexible::sUpdateFactor = 1.0f;
@@ -132,7 +133,7 @@ void LLVolumeImplFlexible::onShift(const LLVector4a &shift_vector)
 {
     //VECTORIZE THIS
     LLVector3 shift(shift_vector.getF32ptr());
-    for (int section = 0; section < (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1; ++section)
+    for (int section = 0; section < (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1; ++section) // <FS:Outworldz/> FlexiFix: whole array
     {
         mSection[section].mPosition += shift;
     }
@@ -230,6 +231,59 @@ void LLVolumeImplFlexible::remapSections(LLFlexibleObjectSection *source, S32 so
     }
 }
 
+// <FS:Outworldz> FlexiFix: floor height in agent Z under pos_agent, or -F32_MAX.
+F32 LLVolumeImplFlexible::sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
+                                       bool use_terrain, const LLVOAvatar* avatarp) const
+{
+    F32 floor_z = -F32_MAX;
+
+    if (use_terrain)
+    {
+        // Use the object's region if the point is inside it, else look it up
+        LLViewerRegion* land_regionp = regionp;
+        LLVector3 pos_region;
+        if (land_regionp)
+        {
+            pos_region = pos_agent - land_regionp->getOriginAgent();
+            const F32 width = land_regionp->getWidth();
+            if (pos_region.mV[VX] < 0.f || pos_region.mV[VX] > width ||
+                pos_region.mV[VY] < 0.f || pos_region.mV[VY] > width)
+            {
+                land_regionp = nullptr;
+            }
+        }
+        if (!land_regionp)
+        {
+            land_regionp = LLWorld::getInstance()->getRegionFromPosAgent(pos_agent);
+            if (land_regionp)
+            {
+                pos_region = pos_agent - land_regionp->getOriginAgent();
+            }
+        }
+        if (land_regionp)
+        {
+            floor_z = land_regionp->getLand().resolveHeightRegion(pos_region) + land_regionp->getOriginAgent().mV[VZ];
+        }
+    }
+
+    if (avatarp && avatarp->getRegion() && !avatarp->mFootPlane.isExactlyClear())
+    {
+        // The foot plane (n . p = w) is in the avatar's region coordinates
+        const LLVector4& plane = avatarp->mFootPlane;
+        const F32 nz = plane.mV[VZ];
+        if (nz > 0.1f) // only floors that face upward
+        {
+            const LLVector3 origin = avatarp->getRegion()->getOriginAgent();
+            const LLVector3 p = pos_agent - origin;
+            const F32 plane_z = (plane.mV[VW] - plane.mV[VX] * p.mV[VX] - plane.mV[VY] * p.mV[VY]) / nz + origin.mV[VZ];
+            floor_z = llmax(floor_z, plane_z);
+        }
+    }
+
+    return floor_z;
+}
+// </FS:Outworldz>
+
 //-----------------------------------------------------------------------------
 void LLVolumeImplFlexible::setAttributesOfAllSections(LLVector3* inScale)
 {
@@ -299,13 +353,35 @@ void LLVolumeImplFlexible::updateRenderRes()
 
     S32 new_res = mAttributes->getSimulateLOD();
 
+    // <FS:Outworldz> FlexiFix: optional extra local subdivisions. With both
+    // settings at 0 (the default) max_res stays FLEXIBLE_OBJECT_MAX_SECTIONS and
+    // nothing below changes.
+    static LLCachedControl<U32> extra_render_setting(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
+    static LLCachedControl<U32> extra_sim_setting(gSavedSettings, "DSFlexiExtraSimSubdivisions", 0);
+    const S32 extra_render = (S32) llmin((U32) extra_render_setting, 3U);
+    const S32 extra_sim = (S32) llmin((U32) extra_sim_setting, 3U);
+    S32 max_res = (S32) FLEXIBLE_OBJECT_MAX_SECTIONS;
+    if (extra_render > 0 || extra_sim > 0)
+    {
+        // Rendering must be able to show every simulated section
+        max_res = llmin((S32) FLEXIBLE_OBJECT_MAX_SECTIONS + llmax(extra_render, extra_sim), DS_FLEXI_MAX_LOCAL_SECTIONS);
+        new_res = llclamp(new_res + extra_sim, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
+    }
+    // </FS:Outworldz>
+
 #if 1 //optimal approximation of previous behavior that doesn't rely on atan2
     F32 app_angle = mVO->getScale().mV[2]/drawablep->mDistanceWRTCamera;
 
     // Rendering sections increases with visible angle on the screen
     F32 render_res = 12.f * app_angle;
-    mRenderRes = (render_res > (F32) FLEXIBLE_OBJECT_MAX_SECTIONS) ? (S32) FLEXIBLE_OBJECT_MAX_SECTIONS
+    // <FS:Outworldz> FlexiFix: shift the screen-size curve up by the extra levels
+    if (extra_render > 0)
+    {
+        render_res += (F32) extra_render;
+    }
+    mRenderRes = (render_res > (F32) max_res) ? max_res
                : (render_res > 0.f) ? (S32) render_res : 0;
+    // </FS:Outworldz>
 
 #else //legacy behavior
     //number of segments only cares about z axis
@@ -315,7 +391,7 @@ void LLVolumeImplFlexible::updateRenderRes()
     mRenderRes = (S32)(FLEXIBLE_OBJECT_MAX_SECTIONS*4*app_angle*DEG_TO_RAD/LLViewerCamera::getInstance()->getView());
 #endif
 
-    mRenderRes = llclamp(mRenderRes, new_res-1, (S32) FLEXIBLE_OBJECT_MAX_SECTIONS);
+    mRenderRes = llclamp(mRenderRes, new_res-1, max_res); // <FS:Outworldz/> FlexiFix: max_res == FLEXIBLE_OBJECT_MAX_SECTIONS by default
 
     // Throttle back simulation of segments we're not rendering
     if (mRenderRes < new_res)
@@ -509,6 +585,34 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
 
     F32 force_factor = section_length * secondsThisFrame;
 
+    // <FS:Outworldz> FlexiFix: optional floor collision (terrain and/or the
+    // wearer's foot plane). Both settings default off; then nothing below runs.
+    static LLCachedControl<bool> terrain_collision(gSavedSettings, "DSFlexiTerrainCollision", false);
+    static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", false);
+    static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 0.5f);
+    const bool use_terrain = terrain_collision;
+    const LLVOAvatar* floor_avatarp = nullptr;
+    if (foot_plane_floor && mVO->isAttachment())
+    {
+        LLViewerObject* parent = (LLViewerObject*) mVO->getParent();
+        while (parent && !parent->isAvatar())
+        {
+            parent = (LLViewerObject*) parent->getParent();
+        }
+        floor_avatarp = (const LLVOAvatar*) parent;
+    }
+    const bool collide_floor = use_terrain || floor_avatarp;
+    LLViewerRegion* floor_regionp = nullptr;
+    F32 ground_friction = 0.f;
+    if (collide_floor)
+    {
+        // One region lookup per object per update; sampleFloorZ falls back
+        // to a per-point lookup only for points outside this region.
+        floor_regionp = LLWorld::getInstance()->getRegionFromPosAgent(AnchorPosition);
+        ground_friction = llclamp((F32) ground_friction_setting, 0.f, 1.f);
+    }
+    // </FS:Outworldz>
+
     // Update simulated sections
     for (i=1; i<=num_sections; ++i)
     {
@@ -592,6 +696,23 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
         // inertia
         //------------------------------------------------------------------------------------------
         mSection[i].mPosition += mSection[i].mVelocity * momentum;
+
+        // <FS:Outworldz> FlexiFix: floor collision. Done before the length/angle
+        // clamp below so the section rotations stay consistent.
+        if (collide_floor)
+        {
+            const LLVector2& sect_scale = mSection[i].mScale;
+            const F32 margin = 0.5f * llmin(sect_scale.mV[0], sect_scale.mV[1]);
+            const F32 floor_z = sampleFloorZ(floor_regionp, mSection[i].mPosition, use_terrain, floor_avatarp);
+            if (floor_z > -F32_MAX && mSection[i].mPosition.mV[VZ] < floor_z + margin)
+            {
+                mSection[i].mPosition.mV[VZ] = floor_z + margin;
+                // Ground friction: pull the sideways step back toward last frame's spot
+                mSection[i].mPosition.mV[VX] -= (mSection[i].mPosition.mV[VX] - lastPosition.mV[VX]) * ground_friction;
+                mSection[i].mPosition.mV[VY] -= (mSection[i].mPosition.mV[VY] - lastPosition.mV[VY]) * ground_friction;
+            }
+        }
+        // </FS:Outworldz>
 
         //------------------------------------------------------------------------------------------
         // clamp length & rotation
@@ -678,8 +799,16 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
 
     LLPath::PathPt *new_point;
 
-    LLFlexibleObjectSection newSection[ (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1 ];
+    LLFlexibleObjectSection newSection[ (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1 ]; // <FS:Outworldz/> FlexiFix: was FLEXIBLE_OBJECT_MAX_SECTIONS
     remapSections(mSection, mSimulateRes, newSection, mRenderRes);
+
+    // <FS:Outworldz> FlexiFix: with extra subdivisions on, take each render point's
+    // twist from the remapped section (newSection) rather than from the simulated
+    // array at the render index. Off by default, so the stock behaviour is kept.
+    static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
+    static LLCachedControl<U32> extra_sim_twist(gSavedSettings, "DSFlexiExtraSimSubdivisions", 0);
+    const bool remapped_twist = ((U32) extra_render_twist > 0) || ((U32) extra_sim_twist > 0);
+    // </FS:Outworldz>
 
     //generate transform from global to prim space
     LLVector3 delta_scale = LLVector3(1,1,1);
@@ -705,7 +834,10 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     {
         new_point = &path->mPath[i];
         LLVector3 pos = newSection[i].mPosition * rel_xform;
-        LLQuaternion rot = mSection[i].mAxisRotation * newSection[i].mRotation * delta_rot;
+        // <FS:Outworldz> FlexiFix: see remapped_twist above
+        const LLQuaternion& axis_rot = remapped_twist ? newSection[i].mAxisRotation : mSection[i].mAxisRotation;
+        LLQuaternion rot = axis_rot * newSection[i].mRotation * delta_rot;
+        // </FS:Outworldz>
 
         LLVector3 np(new_point->mPos.getF32ptr());
 

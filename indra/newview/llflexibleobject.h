@@ -47,6 +47,16 @@ const U32   FLEXIBLE_OBJECT_MAX_LOD         = 10;
 
 // See llprimitive.h for LLFlexibleObjectData and DEFAULT/MIN/MAX values
 
+// <FS:Outworldz> FlexiFix: viewer-local limit on simulated/rendered sections
+// (2^6 = 64). The wire "softness" stays 0..3 (FLEXIBLE_OBJECT_MAX_SECTIONS);
+// the DSFlexiExtra*Subdivisions debug settings add up to 3 more levels locally.
+const S32   DS_FLEXI_MAX_LOCAL_SECTIONS     = 6;
+static_assert(DS_FLEXI_MAX_LOCAL_SECTIONS >= (S32)FLEXIBLE_OBJECT_MAX_SECTIONS + 3,
+              "local section limit must cover the wire maximum plus the extra levels");
+class LLViewerRegion;
+class LLVOAvatar;
+// </FS:Outworldz>
+
 //-------------------------------------------------------------------
 
 struct LLFlexibleObjectSection
@@ -128,7 +138,7 @@ private:
         bool                        mInitialized;
         bool                        mUpdated;
         LLFlexibleObjectData*       mAttributes;
-        LLFlexibleObjectSection     mSection    [ (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1 ];
+        LLFlexibleObjectSection     mSection    [ (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1 ]; // <FS:Outworldz/> FlexiFix: was FLEXIBLE_OBJECT_MAX_SECTIONS
         S32                         mInitializedRes;
         S32                         mSimulateRes;
         S32                         mRenderRes;
@@ -145,6 +155,12 @@ private:
 
         void remapSections(LLFlexibleObjectSection *source, S32 source_sections,
                                          LLFlexibleObjectSection *dest, S32 dest_sections);
+
+        // <FS:Outworldz> FlexiFix: floor height (agent Z) under an agent-space point,
+        // from terrain and/or the wearer's foot plane. Returns -F32_MAX if neither applies.
+        F32 sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
+                         bool use_terrain, const LLVOAvatar* avatarp) const;
+        // </FS:Outworldz>
 
 public:
         // Global setting for update rate

@@ -12452,6 +12452,63 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>1.0</real>
     </map>
+    <!-- <FS:Outworldz> FlexiFix: experimental flexible prim settings, all off by default -->
+    <key>DSFlexiExtraRenderSubdivisions</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: extra levels of detail (0-3) drawn on flexible prims, each doubling the drawn sections, up to 64. Smoother curves; motion is unchanged. 0 = standard viewer behavior.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
+    <key>DSFlexiExtraSimSubdivisions</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: extra levels of detail (0-3) simulated on flexible prims, each doubling the simulated sections, up to 64. Changes how flexies hang and move. 0 = standard viewer behavior.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
+    <key>DSFlexiTerrainCollision</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: flexible prims rest on the terrain instead of passing through it (viewer only).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
+    <key>DSFlexiFloorFromFootPlane</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: flexible prims worn by an avatar rest on the floor that avatar is standing on, including prim floors (viewer only).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
+    <key>DSFlexiGroundFriction</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: how much flexible prims touching the floor resist sliding, 0 (ice) to 1 (stuck). Used only when DSFlexiTerrainCollision or DSFlexiFloorFromFootPlane is on.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.5</real>
+    </map>
+    <!-- </FS:Outworldz> -->
     <key>RenderFogRatio</key>
     <map>
       <key>Comment</key>
