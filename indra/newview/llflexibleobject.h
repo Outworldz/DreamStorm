@@ -148,6 +148,21 @@ private:
         F32                         mCollisionSphereRadius;
         U32                         mID;
 
+        // <FS:Outworldz> FlexiFix pins: parsed from an invisible hover text tag,
+        // "#dsflex pin=<joint>@<fraction>[+x,y,z] ...". See parsePinTag().
+        struct DSFlexiPin
+        {
+            std::string             mJoint;                 // avatar joint name, e.g. mPelvis
+            F32                     mFraction = 1.f;        // (0,1] along the chain, 1 = free end
+            LLVector3               mOffset;                // meters, avatar-local (X forward, Y left, Z up)
+            bool                    mJointMissing = false;  // lookup failed; skip until the tag changes
+        };
+        static constexpr S32        DS_FLEXI_MAX_PINS = 2;
+        std::string                 mPinTagText;    // hover text last parsed
+        DSFlexiPin                  mPins[DS_FLEXI_MAX_PINS];
+        S32                         mNumPins;
+        // </FS:Outworldz>
+
         //--------------------------------------
         // private methods
         //--------------------------------------
@@ -160,6 +175,9 @@ private:
         // from terrain and/or the wearer's foot plane. Returns -F32_MAX if neither applies.
         F32 sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
                          bool use_terrain, const LLVOAvatar* avatarp) const;
+
+        // FlexiFix pins: re-parse mPins from the hover text tag if it changed.
+        void parsePinTag(const std::string& text);
         // </FS:Outworldz>
 
 public:

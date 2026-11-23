@@ -43,6 +43,12 @@
 #include "llworld.h"
 #include "llvoavatar.h"
 #include "llsurface.h" // <FS:Outworldz/> FlexiFix: terrain height
+// <FS:Outworldz> FlexiFix pins: tag parsing
+#include <cctype>
+#include <cmath>
+#include <locale>
+#include <sstream>
+// </FS:Outworldz>
 
 static const F32 SEC_PER_FLEXI_FRAME = 1.f / 60.f; // 60 flexi updates per second
 /*static*/ F32 LLVolumeImplFlexible::sUpdateFactor = 1.0f;
@@ -67,6 +73,7 @@ LLVolumeImplFlexible::LLVolumeImplFlexible(LLViewerObject* vo, LLFlexibleObjectD
     mSimulateRes = 0;
     mCollisionSphereRadius = 0.f;
     mRenderRes = -1;
+    mNumPins = 0; // <FS:Outworldz/> FlexiFix pins
 
     if(mVO->mDrawable.notNull())
     {
@@ -322,6 +329,134 @@ F32 LLVolumeImplFlexible::sampleFloorZ(LLViewerRegion* regionp, const LLVector3&
     }
 
     return floor_z;
+}
+
+namespace
+{
+    // Strict float parse: the whole string must be a finite number.
+    bool ds_flexi_parse_float(const std::string& s, F32& out)
+    {
+        if (s.empty() || s.size() > 32)
+        {
+            return false;
+        }
+        // Classic locale: "0.5" must parse the same whatever the UI language
+        std::istringstream in(s);
+        in.imbue(std::locale::classic());
+        F32 value = 0.f;
+        in >> value;
+        if (in.fail() || in.peek() != std::char_traits<char>::eof() || !std::isfinite(value))
+        {
+            return false;
+        }
+        out = value;
+        return true;
+    }
+}
+
+// FlexiFix pins. Tag format (hover text, set with alpha 0 so nobody sees it):
+//   #dsflex pin=<joint>@<fraction>[+x,y,z] [pin=...]
+// <joint>    avatar skeleton joint name, e.g. mPelvis, mKneeLeft (letters, digits, _)
+// <fraction> 0 < f <= 1, where along the flexi the pin sits (1 = the free end);
+//            rounded to the nearest simulated section
+// +x,y,z     optional offset in meters, avatar-local (X forward, Y left, Z up),
+//            each clamped to +-2 m
+// Only the first line is read, at most 2 pins are used, and malformed pins
+// are ignored.
+void LLVolumeImplFlexible::parsePinTag(const std::string& text)
+{
+    if (text == mPinTagText)
+    {
+        return;
+    }
+    mPinTagText = text;
+    mNumPins = 0;
+
+    static const std::string TAG("#dsflex");
+    if (text.compare(0, TAG.size(), TAG) != 0)
+    {
+        return;
+    }
+    std::string line = text.substr(0, llmin(text.find_first_of("\r\n"), (size_t) 254));
+    if (line.size() > TAG.size() && !std::isspace((unsigned char) line[TAG.size()]))
+    {
+        return; // e.g. "#dsflexible", not our tag
+    }
+
+    size_t pos = TAG.size();
+    while (pos < line.size() && mNumPins < DS_FLEXI_MAX_PINS)
+    {
+        while (pos < line.size() && std::isspace((unsigned char) line[pos]))
+        {
+            ++pos;
+        }
+        size_t token_end = pos;
+        while (token_end < line.size() && !std::isspace((unsigned char) line[token_end]))
+        {
+            ++token_end;
+        }
+        const std::string token = line.substr(pos, token_end - pos);
+        pos = token_end;
+
+        if (token.compare(0, 4, "pin=") != 0)
+        {
+            continue;
+        }
+        const std::string body = token.substr(4);
+        const size_t at = body.find('@');
+        if (at == std::string::npos || at == 0 || at > 63)
+        {
+            continue;
+        }
+        const std::string joint = body.substr(0, at);
+        bool joint_ok = true;
+        for (char c : joint)
+        {
+            if (!std::isalnum((unsigned char) c) && c != '_')
+            {
+                joint_ok = false;
+                break;
+            }
+        }
+        if (!joint_ok)
+        {
+            continue;
+        }
+
+        const std::string rest = body.substr(at + 1);
+        const size_t plus = rest.find('+');
+        F32 fraction = 0.f;
+        if (!ds_flexi_parse_float(rest.substr(0, plus), fraction) || fraction <= 0.f || fraction > 1.f)
+        {
+            continue;
+        }
+
+        LLVector3 offset;
+        if (plus != std::string::npos)
+        {
+            const std::string offset_text = rest.substr(plus + 1);
+            const size_t comma1 = offset_text.find(',');
+            const size_t comma2 = (comma1 == std::string::npos) ? std::string::npos : offset_text.find(',', comma1 + 1);
+            if (comma2 == std::string::npos || offset_text.find(',', comma2 + 1) != std::string::npos)
+            {
+                continue;
+            }
+            F32 x, y, z;
+            if (!ds_flexi_parse_float(offset_text.substr(0, comma1), x) ||
+                !ds_flexi_parse_float(offset_text.substr(comma1 + 1, comma2 - comma1 - 1), y) ||
+                !ds_flexi_parse_float(offset_text.substr(comma2 + 1), z))
+            {
+                continue;
+            }
+            offset.setVec(llclamp(x, -2.f, 2.f), llclamp(y, -2.f, 2.f), llclamp(z, -2.f, 2.f));
+        }
+
+        DSFlexiPin& pin = mPins[mNumPins++];
+        pin.mJoint = joint;
+        pin.mFraction = fraction;
+        pin.mOffset = offset;
+        pin.mJointMissing = false;
+    }
 }
 // </FS:Outworldz>
 
@@ -659,6 +794,109 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     }
     // </FS:Outworldz>
 
+    // <FS:Outworldz> FlexiFix pins: hold chosen sections of a worn flexi at
+    // avatar joints. Off unless DSFlexiPinsEnable is on and the object carries a
+    // "#dsflex pin=..." hover text tag (or, for testing, DSFlexiPinJoint is set:
+    // it pins the free end of every flexi you wear to that joint).
+    static LLCachedControl<bool> pins_enable(gSavedSettings, "DSFlexiPinsEnable", false);
+    static LLCachedControl<std::string> pin_joint_override(gSavedSettings, "DSFlexiPinJoint", "");
+    S32 num_pins = 0;
+    S32 pin_index[DS_FLEXI_MAX_PINS] = { 0, 0 };
+    LLVector3 pin_target[DS_FLEXI_MAX_PINS];
+    F32 pin_prev_pos[3 * ((1 << DS_FLEXI_MAX_LOCAL_SECTIONS) + 1)] = {}; // filled only when pins are active
+    if (pins_enable && mVO->isAttachment() && !mVO->isHUDAttachment()) // HUDs are not in world space
+    {
+        LLViewerObject* parent = (LLViewerObject*) mVO->getParent();
+        while (parent && !parent->isAvatar())
+        {
+            parent = (LLViewerObject*) parent->getParent();
+        }
+        LLVOAvatar* pin_avatarp = (LLVOAvatar*) parent;
+        if (pin_avatarp)
+        {
+            parsePinTag(mVO->mHudText);
+
+            DSFlexiPin override_pin;
+            DSFlexiPin* pins = mPins;
+            S32 pin_count = mNumPins;
+            const std::string& override_joint = pin_joint_override;
+            if (!override_joint.empty() && override_joint.size() < 64 && pin_avatarp->isSelf())
+            {
+                override_pin.mJoint = override_joint;
+                override_pin.mFraction = 1.f;
+                pins = &override_pin;
+                pin_count = 1;
+            }
+
+            const LLQuaternion avatar_rotation = pin_avatarp->getRenderRotation();
+            for (S32 p = 0; p < pin_count; ++p)
+            {
+                DSFlexiPin& pin = pins[p];
+                if (pin.mJointMissing)
+                {
+                    continue;
+                }
+                LLJoint* jointp = pin_avatarp->getJoint(pin.mJoint);
+                if (!jointp)
+                {
+                    pin.mJointMissing = true; // don't search the skeleton every update
+                    continue;
+                }
+                const S32 index = llclamp(ll_round(pin.mFraction * (F32) num_sections), 1, num_sections);
+                LLVector3 target = jointp->getWorldPosition() + pin.mOffset * avatar_rotation;
+                if (!target.isFinite())
+                {
+                    continue;
+                }
+                bool duplicate = false;
+                for (S32 q = 0; q < num_pins; ++q)
+                {
+                    duplicate = duplicate || (pin_index[q] == index);
+                }
+                if (duplicate)
+                {
+                    continue;
+                }
+                pin_index[num_pins] = index;
+                pin_target[num_pins] = target;
+                ++num_pins;
+            }
+
+            // Order by index, then pull each target within reach of the anchor
+            // or the previous pin so the chain never has to stretch.
+            if (num_pins == 2 && pin_index[0] > pin_index[1])
+            {
+                std::swap(pin_index[0], pin_index[1]);
+                std::swap(pin_target[0], pin_target[1]);
+            }
+            LLVector3 reach_from = AnchorPosition;
+            S32 reach_index = 0;
+            for (S32 p = 0; p < num_pins; ++p)
+            {
+                const F32 reach = (F32) (pin_index[p] - reach_index) * section_length;
+                LLVector3 span = pin_target[p] - reach_from;
+                const F32 span_length = span.magVec();
+                if (span_length > reach && span_length > 0.f)
+                {
+                    pin_target[p] = reach_from + span * (reach / span_length);
+                }
+                reach_from = pin_target[p];
+                reach_index = pin_index[p];
+            }
+        }
+    }
+    const bool pins_active = num_pins > 0;
+    if (pins_active)
+    {
+        for (i = 1; i <= num_sections; ++i)
+        {
+            pin_prev_pos[3 * i + 0] = mSection[i].mPosition.mV[VX];
+            pin_prev_pos[3 * i + 1] = mSection[i].mPosition.mV[VY];
+            pin_prev_pos[3 * i + 2] = mSection[i].mPosition.mV[VZ];
+        }
+    }
+    // </FS:Outworldz>
+
     // Update simulated sections
     for (i=1; i<=num_sections; ++i)
     {
@@ -834,6 +1072,110 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
         }
     }
 
+    // <FS:Outworldz> FlexiFix pins: put pinned sections on their targets, then
+    // a few backward/forward distance passes between the anchor and the pins
+    // keep every section one section_length from the next. Pins win over the
+    // floor: pinned sections are never lifted. Runs only when a pin is active.
+    if (pins_active)
+    {
+        const S32 last_pin = pin_index[num_pins - 1];
+        auto is_pinned = [&](S32 index)
+        {
+            for (S32 p = 0; p < num_pins; ++p)
+            {
+                if (pin_index[p] == index)
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const S32 RELAX_PASSES = 3;
+        for (S32 pass = 0; pass < RELAX_PASSES; ++pass)
+        {
+            for (S32 p = 0; p < num_pins; ++p)
+            {
+                mSection[pin_index[p]].mPosition = pin_target[p];
+            }
+
+            // Backward: from the last pin toward the anchor
+            for (S32 j = last_pin - 1; j >= 1; --j)
+            {
+                if (is_pinned(j))
+                {
+                    continue;
+                }
+                LLVector3 dir = mSection[j].mPosition - mSection[j + 1].mPosition;
+                if (dir.normVec() < 1.e-6f)
+                {
+                    dir = -mSection[j + 1].mDirection;
+                }
+                mSection[j].mPosition = mSection[j + 1].mPosition + dir * section_length;
+            }
+
+            // Forward: from the anchor (fixed) to the free end
+            for (S32 j = 1; j <= num_sections; ++j)
+            {
+                if (is_pinned(j))
+                {
+                    continue;
+                }
+                const LLVector3& parent_pos = mSection[j - 1].mPosition;
+                LLVector3 dir = mSection[j].mPosition - parent_pos;
+                if (dir.normVec() < 1.e-6f)
+                {
+                    dir = mSection[j - 1].mDirection;
+                }
+                mSection[j].mPosition = parent_pos + dir * section_length;
+                if (collide_floor)
+                {
+                    const F32 floor_z = sampleFloorZ(floor_regionp, mSection[j].mPosition, use_terrain, floor_avatarp);
+                    if (floor_z > -F32_MAX)
+                    {
+                        const F32 min_z = floor_z + floor_offset +
+                            ds_flexi_half_height(mSection[j].mScale, mSection[j].mAxisRotation * mSection[j].mRotation);
+                        ds_flexi_lift_keep_length(parent_pos, mSection[j].mPosition, section_length, min_z, floor_heading);
+                    }
+                }
+            }
+        }
+
+        // Rebuild directions, rotations and velocities from the final positions
+        LLQuaternion segment_rotation = BaseRotation;
+        LLVector3 previous_direction = mSection[0].mDirection;
+        for (S32 j = 1; j <= num_sections; ++j)
+        {
+            LLVector3 dir = mSection[j].mPosition - mSection[j - 1].mPosition;
+            if (dir.normVec() < 1.e-6f)
+            {
+                dir = previous_direction;
+            }
+            LLQuaternion bend;
+            bend.shortestArc(previous_direction, dir);
+            segment_rotation = segment_rotation * bend;
+            mSection[j].mDirection = dir;
+            mSection[j].mRotation = segment_rotation;
+            previous_direction = dir;
+
+            if (is_pinned(j))
+            {
+                mSection[j].mVelocity.setVec(0.f, 0.f, 0.f);
+            }
+            else
+            {
+                const LLVector3 previous_pos(pin_prev_pos[3 * j + 0], pin_prev_pos[3 * j + 1], pin_prev_pos[3 * j + 2]);
+                mSection[j].mVelocity = mSection[j].mPosition - previous_pos;
+                if (mSection[j].mVelocity.magVecSquared() > 1.f)
+                {
+                    mSection[j].mVelocity.normVec();
+                }
+            }
+        }
+        parentSegmentRotation = segment_rotation;
+    }
+    // </FS:Outworldz>
+
     // Calculate derivatives (not necessary until normals are automagically generated)
     mSection[0].mdPosition = (mSection[1].mPosition - mSection[0].mPosition) * inv_section_length;
     // i = 1..NumSections-1
@@ -892,6 +1234,18 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     {
         for (i = 1; i <= num_render_sections; ++i)
         {
+            // FlexiFix pins win over the floor: leave drawn points that sit on a pin alone
+            bool on_pin = false;
+            for (S32 p = 0; p < num_pins; ++p)
+            {
+                const S32 render_index = (mRenderRes >= mSimulateRes) ? (pin_index[p] << (mRenderRes - mSimulateRes))
+                                                                      : (pin_index[p] >> (mSimulateRes - mRenderRes));
+                on_pin = on_pin || (render_index == i);
+            }
+            if (on_pin)
+            {
+                continue;
+            }
             const F32 floor_z = sampleFloorZ(floor_regionp, newSection[i].mPosition, use_terrain, floor_avatarp);
             if (floor_z > -F32_MAX)
             {
