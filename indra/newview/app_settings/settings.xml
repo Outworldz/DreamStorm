@@ -12519,17 +12519,6 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
-    <key>DSFlexiPinJoint</key>
-    <map>
-      <key>Comment</key>
-      <string>TESTING ONLY: if set (e.g. mFootLeft) and DSFlexiPinsEnable is on, the free end of every flexible prim you wear is pinned to this joint, ignoring hover text tags. Leave empty normally.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>String</string>
-      <key>Value</key>
-      <string />
-    </map>
     <!-- </FS:Outworldz> -->
     <key>RenderFogRatio</key>
     <map>

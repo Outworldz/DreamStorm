@@ -794,10 +794,8 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
 
     // <FS:Outworldz> FlexiFix pins: hold chosen sections of a worn flexi at
     // avatar joints. Off unless DSFlexiPinsEnable is on and the object carries a
-    // "#dsflex pin=..." hover text tag (or, for testing, DSFlexiPinJoint is set:
-    // it pins the free end of every flexi you wear to that joint).
+    // "#dsflex pin=..." hover text tag.
     static LLCachedControl<bool> pins_enable(gSavedSettings, "DSFlexiPinsEnable", false);
-    static LLCachedControl<std::string> pin_joint_override(gSavedSettings, "DSFlexiPinJoint", "");
     S32 num_pins = 0;
     S32 pin_index[DS_FLEXI_MAX_PINS] = { 0, 0 };
     LLVector3 pin_target[DS_FLEXI_MAX_PINS];
@@ -814,17 +812,8 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
         {
             parsePinTag(mVO->mHudText);
 
-            DSFlexiPin override_pin;
             DSFlexiPin* pins = mPins;
-            S32 pin_count = mNumPins;
-            const std::string& override_joint = pin_joint_override;
-            if (!override_joint.empty() && override_joint.size() < 64 && pin_avatarp->isSelf())
-            {
-                override_pin.mJoint = override_joint;
-                override_pin.mFraction = 1.f;
-                pins = &override_pin;
-                pin_count = 1;
-            }
+            const S32 pin_count = mNumPins;
 
             const LLQuaternion avatar_rotation = pin_avatarp->getRenderRotation();
             for (S32 p = 0; p < pin_count; ++p)
