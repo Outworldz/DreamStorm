@@ -399,7 +399,7 @@ void LLVolumeImplFlexible::updateRenderRes()
     // stays FLEXIBLE_OBJECT_MAX_SECTIONS and nothing below changes.
     // Extra *simulated* sections were tried and removed: the per-section
     // tension/angle tuning made the free end oscillate without settling.
-    static LLCachedControl<U32> extra_render_setting(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
+    static LLCachedControl<U32> extra_render_setting(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 3);
     const S32 extra_render = (S32) llmin((U32) extra_render_setting, 3U);
     S32 max_res = (S32) FLEXIBLE_OBJECT_MAX_SECTIONS;
     if (extra_render > 0)
@@ -627,7 +627,7 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     // <FS:Outworldz> FlexiFix: optional floor collision (terrain and/or the
     // wearer's foot plane). Both settings default off; then nothing below runs.
     static LLCachedControl<bool> terrain_collision(gSavedSettings, "DSFlexiTerrainCollision", false);
-    static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", false);
+    static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", true);
     static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 1.0f);
     static LLCachedControl<F32> floor_offset_setting(gSavedSettings, "DSFlexiFloorOffset", 0.05f);
     const bool use_terrain = terrain_collision;
@@ -878,7 +878,7 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     // <FS:Outworldz> FlexiFix: with extra subdivisions on, take each render point's
     // twist from the remapped section (newSection) rather than from the simulated
     // array at the render index. Off by default, so the stock behaviour is kept.
-    static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
+    static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 3);
     const bool remapped_twist = (U32) extra_render_twist > 0;
     // </FS:Outworldz>
 

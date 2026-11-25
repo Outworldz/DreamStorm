@@ -12456,13 +12456,13 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>DSFlexiExtraRenderSubdivisions</key>
     <map>
       <key>Comment</key>
-      <string>EXPERIMENTAL: extra levels of detail (0-3) drawn on flexible prims, each doubling the drawn sections, up to 64. Smoother curves; motion is unchanged. 0 = standard viewer behavior.</string>
+      <string>EXPERIMENTAL: extra levels of detail (0-3) drawn on flexible prims, each doubling the drawn sections, up to 64. Smoother curves; motion is unchanged. 0 = standard viewer behavior. DreamStorm default 3.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
       <string>U32</string>
       <key>Value</key>
-      <integer>0</integer>
+      <integer>3</integer>
     </map>
     <key>DSFlexiTerrainCollision</key>
     <map>
@@ -12478,13 +12478,13 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>DSFlexiFloorFromFootPlane</key>
     <map>
       <key>Comment</key>
-      <string>EXPERIMENTAL: flexible prims worn by an avatar rest on the floor that avatar is standing on, including prim floors (viewer only).</string>
+      <string>EXPERIMENTAL: flexible prims worn by an avatar rest on the floor that avatar is standing on, including prim floors (viewer only). DreamStorm default on.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>0</integer>
+      <integer>1</integer>
     </map>
     <key>DSFlexiGroundFriction</key>
     <map>
