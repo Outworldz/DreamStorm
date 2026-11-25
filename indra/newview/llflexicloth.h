@@ -58,6 +58,11 @@ public:
         F32 mFloorMargin = 0.f;         // gap kept above floor_z, meters
         F32 mFloorFriction = 1.f;       // 0..1, 1 = no sliding on the floor
         S32 mIterations = 4;            // constraint passes per substep, 1..8
+        // Shape keeping: each substep, free particles move this fraction of the
+        // way toward mShapeTargets (cols * rows points, same frame as the
+        // particles; row 0 ignored). 0 or no targets = free cloth.
+        F32 mShapeStiffness = 0.f;
+        const F32* mShapeTargets = nullptr;
     };
 
     LLFlexiCloth();

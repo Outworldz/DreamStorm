@@ -174,6 +174,8 @@ private:
         F32 sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
                          bool use_terrain, const LLVOAvatar* avatarp) const;
 
+        // FlexiFix cloth: each particle's place on the flexi chain as it hangs now.
+        void clothShapeFromChain(S32 cols, S32 rows, F32* out_xyz) const;
         // FlexiFix cloth: advance the cloth one update. Returns false (cloth not
         // usable this update; draw the normal flexi) on any problem.
         bool updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,

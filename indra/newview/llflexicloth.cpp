@@ -367,6 +367,20 @@ void LLFlexiCloth::step(F32 seconds, const Params& params, const F32* pinned_xyz
             solveConstraints(params);
             applyFloor(params, floor_z);
         }
+
+        // Shape keeping: drift toward the prim's own (flexi) shape, so a
+        // flared skirt keeps its size instead of draping into a narrow bunch
+        const F32 shape = ds_cloth_clamp(params.mShapeStiffness, 0.f, 1.f);
+        if (shape > 0.f && params.mShapeTargets)
+        {
+            for (S32 i = 3 * mCols; i < 3 * count; ++i)
+            {
+                if (ds_cloth_finite(params.mShapeTargets[i]))
+                {
+                    mPos[i] += (params.mShapeTargets[i] - mPos[i]) * shape;
+                }
+            }
+        }
         limitStretch();
         applyFloor(params, floor_z);
 

@@ -12530,6 +12530,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>16.0</real>
     </map>
+    <key>DSFlexiClothShape</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL: how closely round flexible prims (skirts) drawn as cloth follow their normal flexi shape (size, taper, flare and the way they point). 0 = drape like loose cloth, 0.5 = flexi shape with a soft cloth sway, 1 = almost exactly the normal flexi. Used only when DSFlexiCloth is on.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.5</real>
+    </map>
     <!-- </FS:Outworldz> -->
     <key>RenderFogRatio</key>
     <map>

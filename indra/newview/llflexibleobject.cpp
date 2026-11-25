@@ -383,6 +383,29 @@ namespace
     }
 }
 
+// Where each cloth particle sits on the flexi chain as it hangs now: the rest
+// ring (or edge) of its row, placed and turned with the chain at that height.
+void LLVolumeImplFlexible::clothShapeFromChain(S32 cols, S32 rows, F32* out_xyz) const
+{
+    const S32 num_sections = 1 << llclamp(mSimulateRes, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
+    for (S32 r = 0; r < rows; ++r)
+    {
+        const F32 f = (F32) r / (F32) (rows - 1) * (F32) num_sections;
+        const S32 k = llclamp(llfloor(f), 0, num_sections - 1);
+        const F32 frac = llclamp(f - (F32) k, 0.f, 1.f);
+        const LLVector3 center = lerp(mSection[k].mPosition, mSection[k + 1].mPosition, frac);
+        const LLQuaternion rot = slerp(frac, mSection[k].mRotation, mSection[k + 1].mRotation);
+        for (S32 c = 0; c < cols; ++c)
+        {
+            const S32 i = r * cols + c;
+            const LLVector3 p = center + LLVector3(mClothRest[3 * i], mClothRest[3 * i + 1], 0.f) * rot;
+            out_xyz[3 * i + 0] = p.mV[VX];
+            out_xyz[3 * i + 1] = p.mV[VY];
+            out_xyz[3 * i + 2] = p.mV[VZ];
+        }
+    }
+}
+
 bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,
                                        const LLVector3& scale, bool collide_floor, LLViewerRegion* floor_regionp,
                                        bool use_terrain, const LLVOAvatar* floor_avatarp,
@@ -451,24 +474,8 @@ bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, 
         }
 
         // Start from the flexi chain as it hangs now, so switching to cloth is smooth
-        const S32 num_sections = 1 << llclamp(mSimulateRes, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
         std::vector<F32> start(3 * count);
-        for (S32 r = 0; r < rows; ++r)
-        {
-            const F32 f = (F32) r / (F32) (rows - 1) * (F32) num_sections;
-            const S32 k = llclamp(llfloor(f), 0, num_sections - 1);
-            const F32 frac = llclamp(f - (F32) k, 0.f, 1.f);
-            const LLVector3 center = lerp(mSection[k].mPosition, mSection[k + 1].mPosition, frac);
-            const LLQuaternion rot = slerp(frac, mSection[k].mRotation, mSection[k + 1].mRotation);
-            for (S32 c = 0; c < cols; ++c)
-            {
-                const S32 i = r * cols + c;
-                const LLVector3 p = center + LLVector3(mClothRest[3 * i], mClothRest[3 * i + 1], 0.f) * rot;
-                start[3 * i + 0] = p.mV[VX];
-                start[3 * i + 1] = p.mV[VY];
-                start[3 * i + 2] = p.mV[VZ];
-            }
-        }
+        clothShapeFromChain(cols, rows, &start[0]);
         if (!mCloth.init(cols, rows, tube, &mClothRest[0], &start[0]))
         {
             return false;
@@ -479,11 +486,12 @@ bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, 
     }
     mClothFramePos = frame_pos;
 
-    // Buffers: held-row targets, floor height and wind per particle
-    mClothScratch.resize(3 * cols + 4 * count);
+    // Buffers: held-row targets, floor height, wind and shape target per particle
+    mClothScratch.resize(3 * cols + 7 * count);
     F32* pins = &mClothScratch[0];
     F32* floor_z = pins + 3 * cols;
     F32* accel = floor_z + count;
+    F32* shape_targets = accel + 3 * count;
     for (S32 c = 0; c < cols; ++c)
     {
         const LLVector3 p = frame_pos + LLVector3(&mClothRest[3 * c]) * frame_rot;
@@ -528,6 +536,19 @@ bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, 
     params.mBendStiffness = llmax(mAttributes->getTension() * 0.002f, 0.0005f);
     params.mIterations = 4;
     params.mFloorFriction = ground_friction;
+    if (tube)
+    {
+        // Round prims keep the flexi's own shape (size, taper, flare, the way
+        // it points), with cloth sway on top; 0 = drape like loose cloth
+        static LLCachedControl<F32> cloth_shape(gSavedSettings, "DSFlexiClothShape", 0.5f);
+        const F32 shape = llclamp((F32) cloth_shape, 0.f, 1.f);
+        if (shape > 0.f)
+        {
+            clothShapeFromChain(cols, rows, shape_targets);
+            params.mShapeStiffness = shape * shape * 0.5f; // per 1/60 s substep
+            params.mShapeTargets = shape_targets;
+        }
+    }
     params.mFloorMargin = floor_offset +
         (tube ? 0.f : 0.5f * scale.mV[VY] * llmax(taper_begin.mV[VY], taper_end.mV[VY]));
 
