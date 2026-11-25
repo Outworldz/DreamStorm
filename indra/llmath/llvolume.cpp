@@ -2023,6 +2023,18 @@ void LLVolume::regen()
     createVolumeFaces();
 }
 
+// <FS:Outworldz> FlexiFix cloth
+void LLVolume::regenDeformed(const mesh_deform_callback_t& deform)
+{
+    generate();
+    if (deform)
+    {
+        deform(*this, mMesh);
+    }
+    createVolumeFaces();
+}
+// </FS:Outworldz>
+
 void LLVolume::genTangents(S32 face)
 {
     // generate legacy tangents for the specified face

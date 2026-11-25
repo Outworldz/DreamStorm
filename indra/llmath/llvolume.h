@@ -28,6 +28,7 @@
 #define LL_LLVOLUME_H
 
 #include <iostream>
+#include <functional> // <FS:Outworldz/> FlexiFix cloth: regenDeformed()
 
 class LLProfileParams;
 class LLPathParams;
@@ -1046,6 +1047,13 @@ public:
     void setDirty() { mPathp->setDirty(); mProfilep->setDirty(); }
 
     void regen();
+    // <FS:Outworldz> FlexiFix cloth: like regen(), but deform may move the mesh
+    // points after they are built from the path and profile and before the faces
+    // (and their normals) are made from them. Only flexible prims in cloth mode
+    // call this; regen() and every other volume are unchanged.
+    typedef std::function<void(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh)> mesh_deform_callback_t;
+    void regenDeformed(const mesh_deform_callback_t& deform);
+    // </FS:Outworldz>
     void genTangents(S32 face);
 
     bool isConvex() const;
