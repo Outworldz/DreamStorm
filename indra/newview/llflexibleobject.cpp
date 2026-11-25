@@ -529,19 +529,17 @@ void LLVolumeImplFlexible::updateRenderRes()
 
     S32 new_res = mAttributes->getSimulateLOD();
 
-    // <FS:Outworldz> FlexiFix: optional extra local subdivisions. With both
-    // settings at 0 (the default) max_res stays FLEXIBLE_OBJECT_MAX_SECTIONS and
-    // nothing below changes.
+    // <FS:Outworldz> FlexiFix: optional extra rendered subdivisions (a finer
+    // curve through the same simulated sections). At 0 (the default) max_res
+    // stays FLEXIBLE_OBJECT_MAX_SECTIONS and nothing below changes.
+    // Extra *simulated* sections were tried and removed: the per-section
+    // tension/angle tuning made the free end oscillate without settling.
     static LLCachedControl<U32> extra_render_setting(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
-    static LLCachedControl<U32> extra_sim_setting(gSavedSettings, "DSFlexiExtraSimSubdivisions", 0);
     const S32 extra_render = (S32) llmin((U32) extra_render_setting, 3U);
-    const S32 extra_sim = (S32) llmin((U32) extra_sim_setting, 3U);
     S32 max_res = (S32) FLEXIBLE_OBJECT_MAX_SECTIONS;
-    if (extra_render > 0 || extra_sim > 0)
+    if (extra_render > 0)
     {
-        // Rendering must be able to show every simulated section
-        max_res = llmin((S32) FLEXIBLE_OBJECT_MAX_SECTIONS + llmax(extra_render, extra_sim), DS_FLEXI_MAX_LOCAL_SECTIONS);
-        new_res = llclamp(new_res + extra_sim, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
+        max_res = llmin((S32) FLEXIBLE_OBJECT_MAX_SECTIONS + extra_render, DS_FLEXI_MAX_LOCAL_SECTIONS);
     }
     // </FS:Outworldz>
 
@@ -765,8 +763,8 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     // wearer's foot plane). Both settings default off; then nothing below runs.
     static LLCachedControl<bool> terrain_collision(gSavedSettings, "DSFlexiTerrainCollision", false);
     static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", false);
-    static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 0.5f);
-    static LLCachedControl<F32> floor_offset_setting(gSavedSettings, "DSFlexiFloorOffset", 0.02f);
+    static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 1.0f);
+    static LLCachedControl<F32> floor_offset_setting(gSavedSettings, "DSFlexiFloorOffset", 0.05f);
     const bool use_terrain = terrain_collision;
     const LLVOAvatar* floor_avatarp = nullptr;
     if (foot_plane_floor && mVO->isAttachment())
@@ -1223,8 +1221,7 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     // twist from the remapped section (newSection) rather than from the simulated
     // array at the render index. Off by default, so the stock behaviour is kept.
     static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 0);
-    static LLCachedControl<U32> extra_sim_twist(gSavedSettings, "DSFlexiExtraSimSubdivisions", 0);
-    const bool remapped_twist = ((U32) extra_render_twist > 0) || ((U32) extra_sim_twist > 0);
+    const bool remapped_twist = (U32) extra_render_twist > 0;
     // </FS:Outworldz>
 
     // <FS:Outworldz> FlexiFix: floor collision for the drawn points. The cubic

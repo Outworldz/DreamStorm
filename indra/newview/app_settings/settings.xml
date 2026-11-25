@@ -12464,17 +12464,6 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
-    <key>DSFlexiExtraSimSubdivisions</key>
-    <map>
-      <key>Comment</key>
-      <string>EXPERIMENTAL: extra levels of detail (0-3) simulated on flexible prims, each doubling the simulated sections, up to 64. Changes how flexies hang and move. 0 = standard viewer behavior.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>U32</string>
-      <key>Value</key>
-      <integer>0</integer>
-    </map>
     <key>DSFlexiTerrainCollision</key>
     <map>
       <key>Comment</key>
@@ -12506,7 +12495,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>0.5</real>
+      <real>1.0</real>
     </map>
     <key>DSFlexiFloorOffset</key>
     <map>
@@ -12517,7 +12506,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>0.02</real>
+      <real>0.05</real>
     </map>
     <key>DSFlexiPinsEnable</key>
     <map>
