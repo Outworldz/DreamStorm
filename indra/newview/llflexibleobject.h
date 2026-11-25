@@ -40,6 +40,7 @@
 #include "llprimitive.h"
 #include "llvovolume.h"
 #include "llwind.h"
+#include "llflexicloth.h" // <FS:Outworldz/> FlexiFix cloth
 
 // 10 ms for the whole thing!
 const F32   FLEXIBLE_OBJECT_TIMESLICE       = 0.003f;
@@ -148,6 +149,18 @@ private:
         F32                         mCollisionSphereRadius;
         U32                         mID;
 
+        // <FS:Outworldz> FlexiFix cloth (DSFlexiCloth). All empty while cloth is off.
+        LLFlexiCloth                mCloth;
+        bool                        mClothActive;       // the cloth shapes the mesh
+        LLVector3                   mClothScale;        // prim scale the cloth was built for
+        LLVector2                   mClothTaperBegin;   // path begin/end scale it was built for
+        LLVector2                   mClothTaperEnd;
+        LLVector3                   mClothFramePos;     // frame position at the last update
+        std::vector<F32>            mClothRest;         // rest shape, prim space
+        std::vector<F32>            mClothLocal;        // particles in prim space, for the mesh
+        std::vector<F32>            mClothScratch;      // per-update buffers (pins, floor, wind)
+        // </FS:Outworldz>
+
         //--------------------------------------
         // private methods
         //--------------------------------------
@@ -160,6 +173,15 @@ private:
         // from terrain and/or the wearer's foot plane. Returns -F32_MAX if neither applies.
         F32 sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
                          bool use_terrain, const LLVOAvatar* avatarp) const;
+
+        // FlexiFix cloth: advance the cloth one update. Returns false (cloth not
+        // usable this update; draw the normal flexi) on any problem.
+        bool updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,
+                         const LLVector3& scale, bool collide_floor, LLViewerRegion* floor_regionp,
+                         bool use_terrain, const LLVOAvatar* floor_avatarp,
+                         F32 floor_offset, F32 ground_friction);
+        // FlexiFix cloth: move the volume's mesh points onto the cloth.
+        void deformClothMesh(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh) const;
         // </FS:Outworldz>
 
 public:

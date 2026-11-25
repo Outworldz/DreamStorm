@@ -67,6 +67,7 @@ LLVolumeImplFlexible::LLVolumeImplFlexible(LLViewerObject* vo, LLFlexibleObjectD
     mSimulateRes = 0;
     mCollisionSphereRadius = 0.f;
     mRenderRes = -1;
+    mClothActive = false; // <FS:Outworldz/> FlexiFix cloth
 
     if(mVO->mDrawable.notNull())
     {
@@ -137,6 +138,13 @@ void LLVolumeImplFlexible::onShift(const LLVector4a &shift_vector)
     {
         mSection[section].mPosition += shift;
     }
+    // <FS:Outworldz> FlexiFix cloth: particles are in agent space too
+    if (mCloth.isInitialized())
+    {
+        mCloth.shift(shift.mV[VX], shift.mV[VY], shift.mV[VZ]);
+        mClothFramePos += shift;
+    }
+    // </FS:Outworldz>
 }
 
 //-----------------------------------------------------------------------------------------------
@@ -322,6 +330,368 @@ F32 LLVolumeImplFlexible::sampleFloorZ(LLViewerRegion* regionp, const LLVector3&
     }
 
     return floor_z;
+}
+// </FS:Outworldz>
+
+// <FS:Outworldz> FlexiFix cloth (DSFlexiCloth)
+namespace
+{
+    // Catmull-Rom weights for the point t (0..1) between taps 1 and 2 of four
+    void ds_cloth_cr_weights(F32 t, F32 w[4])
+    {
+        const F32 t2 = t * t;
+        const F32 t3 = t2 * t;
+        w[0] = 0.5f * (-t3 + 2.f * t2 - t);
+        w[1] = 0.5f * (3.f * t3 - 5.f * t2 + 2.f);
+        w[2] = 0.5f * (-3.f * t3 + 4.f * t2 + t);
+        w[3] = 0.5f * (t3 - t2);
+    }
+
+    // The four grid lines around coordinate x (0..n-1, or 0..n wrapping round)
+    // and their smooth-curve weights
+    struct DSClothTaps
+    {
+        S32 mIndex[4];
+        F32 mWeight[4];
+    };
+
+    DSClothTaps ds_cloth_taps(F32 x, S32 n, bool wrap)
+    {
+        DSClothTaps taps;
+        S32 i0;
+        if (wrap)
+        {
+            x = fmodf(x, (F32) n);
+            if (x < 0.f)
+            {
+                x += (F32) n;
+            }
+            i0 = llclamp(llfloor(x), 0, n - 1);
+        }
+        else
+        {
+            x = llclamp(x, 0.f, (F32) (n - 1));
+            i0 = llclamp(llfloor(x), 0, n - 2);
+        }
+        ds_cloth_cr_weights(llclamp(x - (F32) i0, 0.f, 1.f), taps.mWeight);
+        for (S32 k = 0; k < 4; ++k)
+        {
+            const S32 index = i0 - 1 + k;
+            taps.mIndex[k] = wrap ? ((index % n) + n) % n : llclamp(index, 0, n - 1);
+        }
+        return taps;
+    }
+}
+
+bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,
+                                       const LLVector3& scale, bool collide_floor, LLViewerRegion* floor_regionp,
+                                       bool use_terrain, const LLVOAvatar* floor_avatarp,
+                                       F32 floor_offset, F32 ground_friction)
+{
+    LLVolume* volume = mVO->getVolume();
+    if (!volume || !mAttributes || !mVO->mDrawable || !scale.isFinite() || !frame_pos.isFinite() ||
+        scale.mV[VX] <= 0.f || scale.mV[VY] <= 0.f || scale.mV[VZ] <= 0.f)
+    {
+        return false;
+    }
+
+    // Round profile: a closed tube (skirt). Anything else: an open sheet across X (cape, train).
+    const LLVolumeParams& volume_params = volume->getParams();
+    const bool tube = (volume_params.getProfileParams().getCurveType() & LL_PCODE_PROFILE_MASK) == LL_PCODE_PROFILE_CIRCLE;
+    const LLPathParams& path_params = volume_params.getPathParams();
+    const LLVector2 taper_begin = path_params.getBeginScale();
+    const LLVector2 taper_end = path_params.getEndScale();
+
+    // Rows down the prim: twice the flexi's sections for its softness (5 to 17 rows).
+    // Columns: about one per 10 cm around (tube) or across (sheet).
+    const S32 softness = llclamp(mAttributes->getSimulateLOD(), 0, 3);
+    const S32 rows = llclamp(2 << softness, 4, LLFlexiCloth::MAX_ROWS - 1) + 1;
+    S32 cols;
+    if (tube)
+    {
+        const F32 circumference = F_PI * 0.5f * (scale.mV[VX] + scale.mV[VY]);
+        cols = llclamp(ll_round(circumference / 0.1f), 8, LLFlexiCloth::MAX_COLS);
+    }
+    else
+    {
+        cols = llclamp(ll_round(scale.mV[VX] / 0.1f) + 1, LLFlexiCloth::MIN_COLS, LLFlexiCloth::MAX_COLS);
+    }
+    const S32 count = cols * rows;
+
+    const bool rebuild = !mCloth.isInitialized() || mCloth.getCols() != cols || mCloth.getRows() != rows ||
+                         mCloth.isTube() != tube || dist_vec(scale, mClothScale) > 0.001f ||
+                         taper_begin != mClothTaperBegin || taper_end != mClothTaperEnd ||
+                         dist_vec(frame_pos, mClothFramePos) > 10.f; // teleport or big jump: start over
+    if (rebuild)
+    {
+        // Rest shape in prim space: the prim standing straight, base at -Z/2
+        mClothRest.resize(3 * count);
+        for (S32 r = 0; r < rows; ++r)
+        {
+            const F32 t = (F32) r / (F32) (rows - 1);
+            const F32 z = (t - 0.5f) * scale.mV[VZ];
+            const F32 sx = scale.mV[VX] * lerp(taper_begin.mV[VX], taper_end.mV[VX], t);
+            const F32 sy = scale.mV[VY] * lerp(taper_begin.mV[VY], taper_end.mV[VY], t);
+            for (S32 c = 0; c < cols; ++c)
+            {
+                F32* p = &mClothRest[3 * (r * cols + c)];
+                if (tube)
+                {
+                    const F32 angle = F_TWO_PI * (F32) c / (F32) cols;
+                    p[0] = 0.5f * sx * cosf(angle);
+                    p[1] = 0.5f * sy * sinf(angle);
+                }
+                else
+                {
+                    p[0] = ((F32) c / (F32) (cols - 1) - 0.5f) * sx;
+                    p[1] = 0.f;
+                }
+                p[2] = z;
+            }
+        }
+
+        // Start from the flexi chain as it hangs now, so switching to cloth is smooth
+        const S32 num_sections = 1 << llclamp(mSimulateRes, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
+        std::vector<F32> start(3 * count);
+        for (S32 r = 0; r < rows; ++r)
+        {
+            const F32 f = (F32) r / (F32) (rows - 1) * (F32) num_sections;
+            const S32 k = llclamp(llfloor(f), 0, num_sections - 1);
+            const F32 frac = llclamp(f - (F32) k, 0.f, 1.f);
+            const LLVector3 center = lerp(mSection[k].mPosition, mSection[k + 1].mPosition, frac);
+            const LLQuaternion rot = slerp(frac, mSection[k].mRotation, mSection[k + 1].mRotation);
+            for (S32 c = 0; c < cols; ++c)
+            {
+                const S32 i = r * cols + c;
+                const LLVector3 p = center + LLVector3(mClothRest[3 * i], mClothRest[3 * i + 1], 0.f) * rot;
+                start[3 * i + 0] = p.mV[VX];
+                start[3 * i + 1] = p.mV[VY];
+                start[3 * i + 2] = p.mV[VZ];
+            }
+        }
+        if (!mCloth.init(cols, rows, tube, &mClothRest[0], &start[0]))
+        {
+            return false;
+        }
+        mClothScale = scale;
+        mClothTaperBegin = taper_begin;
+        mClothTaperEnd = taper_end;
+    }
+    mClothFramePos = frame_pos;
+
+    // Buffers: held-row targets, floor height and wind per particle
+    mClothScratch.resize(3 * cols + 4 * count);
+    F32* pins = &mClothScratch[0];
+    F32* floor_z = pins + 3 * cols;
+    F32* accel = floor_z + count;
+    for (S32 c = 0; c < cols; ++c)
+    {
+        const LLVector3 p = frame_pos + LLVector3(&mClothRest[3 * c]) * frame_rot;
+        pins[3 * c + 0] = p.mV[VX];
+        pins[3 * c + 1] = p.mV[VY];
+        pins[3 * c + 2] = p.mV[VZ];
+    }
+
+    const F32* positions = mCloth.getPositions();
+    if (collide_floor)
+    {
+        for (S32 i = 0; i < count; ++i)
+        {
+            floor_z[i] = sampleFloorZ(floor_regionp, LLVector3(positions + 3 * i), use_terrain, floor_avatarp);
+        }
+    }
+
+    const F32 wind_sensitivity = mAttributes->getWindSensitivity();
+    LLViewerRegion* wind_regionp = gAgent.getRegion();
+    const bool use_wind = wind_sensitivity > 0.001f && wind_regionp;
+    if (use_wind)
+    {
+        for (S32 i = 0; i < count; ++i)
+        {
+            const LLVector3 pos_region = wind_regionp->getPosRegionFromAgent(LLVector3(positions + 3 * i));
+            const LLVector3 wind = wind_regionp->mWind.getVelocity(pos_region) * (wind_sensitivity * 0.5f);
+            accel[3 * i + 0] = wind.mV[VX];
+            accel[3 * i + 1] = wind.mV[VY];
+            accel[3 * i + 2] = wind.mV[VZ];
+        }
+    }
+
+    // The flexi parameters, as cloth: gravity 1 = earth gravity, drag = air
+    // resistance, tension = how much the cloth resists folding, force = push.
+    LLFlexiCloth::Params params;
+    params.mGravity = mAttributes->getGravity() * 9.8f;
+    const LLVector3 user_force = mAttributes->getUserForce();
+    params.mAccel[0] = user_force.mV[VX];
+    params.mAccel[1] = user_force.mV[VY];
+    params.mAccel[2] = user_force.mV[VZ];
+    params.mDamping = 1.f + mAttributes->getAirFriction() * 0.5f;
+    params.mBendStiffness = llmax(mAttributes->getTension() * 0.002f, 0.0005f);
+    params.mIterations = 4;
+    params.mFloorFriction = ground_friction;
+    params.mFloorMargin = floor_offset +
+        (tube ? 0.f : 0.5f * scale.mV[VY] * llmax(taper_begin.mV[VY], taper_end.mV[VY]));
+
+    mCloth.step(seconds, params, pins, collide_floor ? floor_z : nullptr, use_wind ? accel : nullptr);
+    if (!mCloth.isFinite())
+    {
+        mCloth.clear();
+        return false;
+    }
+
+    // Particles to prim space (as the path points are), and see if they moved
+    // enough to rebuild the mesh
+    positions = mCloth.getPositions();
+    const LLQuaternion to_local = ~frame_rot;
+    const F32 threshold = 0.001f * llmax(mVO->mDrawable->mDistanceWRTCamera, 0.1f);
+    bool moved = (S32) mClothLocal.size() != 3 * count;
+    mClothLocal.resize(3 * count);
+    for (S32 i = 0; i < count; ++i)
+    {
+        const LLVector3 local = (LLVector3(positions + 3 * i) - frame_pos) * to_local;
+        F32* out = &mClothLocal[3 * i];
+        if (!moved && dist_vec(local, LLVector3(out)) > threshold)
+        {
+            moved = true;
+        }
+        out[0] = local.mV[VX];
+        out[1] = local.mV[VY];
+        out[2] = local.mV[VZ];
+    }
+    if (moved)
+    {
+        mUpdated = false;
+    }
+    return true;
+}
+
+void LLVolumeImplFlexible::deformClothMesh(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh) const
+{
+    const S32 cols = mCloth.getCols();
+    const S32 rows = mCloth.getRows();
+    if (cols < 2 || rows < 2 || (S32) mClothLocal.size() != 3 * cols * rows)
+    {
+        return;
+    }
+    const LLPath& path = volume.getPath();
+    const LLProfile& profile = volume.getProfile();
+    const S32 path_count = (S32) path.mPath.size();
+    const S32 profile_count = (S32) profile.mProfile.size();
+    if (path_count < 2 || profile_count < 1 || (S32) mesh.size() != path_count * profile_count)
+    {
+        return;
+    }
+    const bool tube = mCloth.isTube();
+    const F32* grid = &mClothLocal[0];
+
+    // Tube: centre of each row. Sheet: surface normal at each particle.
+    std::vector<LLVector3> centers(rows);
+    std::vector<LLVector3> normals;
+    if (tube)
+    {
+        for (S32 r = 0; r < rows; ++r)
+        {
+            LLVector3 sum;
+            for (S32 c = 0; c < cols; ++c)
+            {
+                sum += LLVector3(grid + 3 * (r * cols + c));
+            }
+            centers[r] = sum * (1.f / (F32) cols);
+        }
+    }
+    else
+    {
+        normals.resize(rows * cols);
+        for (S32 r = 0; r < rows; ++r)
+        {
+            for (S32 c = 0; c < cols; ++c)
+            {
+                const LLVector3 across = LLVector3(grid + 3 * (r * cols + llmin(c + 1, cols - 1))) -
+                                         LLVector3(grid + 3 * (r * cols + llmax(c - 1, 0)));
+                const LLVector3 down = LLVector3(grid + 3 * (llmin(r + 1, rows - 1) * cols + c)) -
+                                       LLVector3(grid + 3 * (llmax(r - 1, 0) * cols + c));
+                LLVector3 normal = down % across;
+                if (normal.normVec() < 1.e-6f)
+                {
+                    normal = LLVector3::y_axis;
+                }
+                normals[r * cols + c] = normal;
+            }
+        }
+    }
+
+    // Each profile point: where it sits around/across the cloth, and how far
+    // out (tube: fraction of the radius) or through it (sheet: profile Y)
+    std::vector<DSClothTaps> column_taps(profile_count);
+    std::vector<F32> offsets(profile_count);
+    for (S32 t = 0; t < profile_count; ++t)
+    {
+        const F32* pt = profile.mProfile[t].getF32ptr();
+        if (tube)
+        {
+            F32 angle = atan2f(pt[1], pt[0]);
+            if (angle < 0.f)
+            {
+                angle += F_TWO_PI;
+            }
+            column_taps[t] = ds_cloth_taps(angle / F_TWO_PI * (F32) cols, cols, true);
+            offsets[t] = 2.f * sqrtf(pt[0] * pt[0] + pt[1] * pt[1]);
+        }
+        else
+        {
+            column_taps[t] = ds_cloth_taps((pt[0] + 0.5f) * (F32) (cols - 1), cols, false);
+            offsets[t] = pt[1];
+        }
+    }
+
+    for (S32 s = 0; s < path_count; ++s)
+    {
+        const DSClothTaps row_taps = ds_cloth_taps((F32) s / (F32) (path_count - 1) * (F32) (rows - 1), rows, false);
+        const F32 thickness = path.mPath[s].mScale.getF32ptr()[1];
+        LLVector3 center;
+        if (tube)
+        {
+            for (S32 a = 0; a < 4; ++a)
+            {
+                center += centers[row_taps.mIndex[a]] * row_taps.mWeight[a];
+            }
+        }
+        for (S32 t = 0; t < profile_count; ++t)
+        {
+            const DSClothTaps& col = column_taps[t];
+            LLVector3 surface;
+            LLVector3 normal;
+            for (S32 a = 0; a < 4; ++a)
+            {
+                for (S32 b = 0; b < 4; ++b)
+                {
+                    const F32 weight = row_taps.mWeight[a] * col.mWeight[b];
+                    const S32 index = row_taps.mIndex[a] * cols + col.mIndex[b];
+                    surface += LLVector3(grid + 3 * index) * weight;
+                    if (!tube)
+                    {
+                        normal += normals[index] * weight;
+                    }
+                }
+            }
+            LLVector3 point;
+            if (tube)
+            {
+                point = center + (surface - center) * offsets[t];
+            }
+            else
+            {
+                if (normal.normVec() < 1.e-6f)
+                {
+                    normal = LLVector3::y_axis;
+                }
+                point = surface + normal * (offsets[t] * thickness);
+            }
+            if (point.isFinite())
+            {
+                mesh[s * profile_count + t].load3(point.mV);
+            }
+        }
+    }
 }
 // </FS:Outworldz>
 
@@ -861,6 +1231,37 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
     // i = NumSections
     mSection[i].mdPosition = (mSection[i].mPosition - mSection[i-1].mPosition) * inv_section_length;
 
+    // <FS:Outworldz> FlexiFix cloth: with DSFlexiCloth on, a cloth grid shapes
+    // the mesh (see doFlexibleRebuild); the chain above keeps running so the
+    // cloth can start from it and the prim can fall back to it at a distance.
+    // With the setting off (the default) nothing here runs.
+    static LLCachedControl<bool> cloth_setting(gSavedSettings, "DSFlexiCloth", false);
+    if (cloth_setting || mClothActive || mCloth.isInitialized())
+    {
+        static LLCachedControl<F32> cloth_max_distance(gSavedSettings, "DSFlexiClothMaxDistance", 16.f);
+        bool use_cloth = cloth_setting && !mVO->isHUDAttachment() &&
+                         mVO->mDrawable->mDistanceWRTCamera <= (F32) cloth_max_distance;
+        if (use_cloth)
+        {
+            use_cloth = updateCloth(secondsThisFrame, BasePosition, BaseRotation, anchorScale,
+                                    collide_floor, floor_regionp, use_terrain, floor_avatarp,
+                                    floor_offset, ground_friction);
+        }
+        if (!use_cloth)
+        {
+            mCloth.clear();
+            mClothRest.clear();
+            mClothLocal.clear();
+            mClothScratch.clear();
+        }
+        if (use_cloth != mClothActive)
+        {
+            mClothActive = use_cloth;
+            mUpdated = false; // rebuild the mesh as cloth or as the chain
+        }
+    }
+    // </FS:Outworldz>
+
     // Create points
     llassert(mRenderRes > -1);
     S32 num_render_sections = 1<<mRenderRes;
@@ -968,7 +1369,19 @@ void LLVolumeImplFlexible::doFlexibleRebuild(bool rebuild_volume)
         {
             volume->setDirty();
         }
-        volume->regen();
+        // <FS:Outworldz> FlexiFix cloth
+        if (mClothActive && !mClothLocal.empty())
+        {
+            volume->regenDeformed([this](const LLVolume& vol, LLAlignedArray<LLVector4a,64>& mesh)
+                                  {
+                                      deformClothMesh(vol, mesh);
+                                  });
+        }
+        else
+        {
+            volume->regen();
+        }
+        // </FS:Outworldz>
     }
 
     mUpdated = true;
