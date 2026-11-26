@@ -32,6 +32,29 @@ The simulator tells the viewer about the waves through the region's simulator fe
 - Waves are drawn on your own region and on empty water up to about 1 km away. Water further out stays flat, and the waves fade out smoothly between 384 and 768 m.
 - A change of wave direction from the region's environment reaches the viewer when you next enter the region.
 
+### Flexible prims: trains, capes and skirts (FlexiFix)
+
+DreamStorm also draws flexible prims better. It all happens in your own viewer: nothing changes on the server, and it works on Second Life and every OpenSim grid.
+
+- **Smoother:** flexible prims are drawn with up to 64 pieces instead of 8, so a long train curves smoothly.
+- **On the floor:** a flexible prim you wear rests on the floor you stand on, ground or prim, instead of sinking through it. A train falls in behind you when you walk and stays put when you stop, even on a ramp.
+- **Cloth (experimental, off by default):** turn on `DSFlexiCloth`. Round prims hang as a tube (skirts) and keep their flexi shape with a cloth sway; boxes hang as a sheet (capes, trains). Past 16 m from the camera they go back to normal flexi. Legs can still poke through a skirt, and twist is ignored in cloth mode.
+
+The settings are in Debug Settings (Advanced menu, Show Debug Settings, or Ctrl+Alt+Shift+S):
+
+| Setting | What it does | Default |
+|---|---|---|
+| `DSFlexiExtraRenderSubdivisions` | Extra smoothness, 0 to 3; each step doubles the pieces. 0 = normal viewer. | 3 |
+| `DSFlexiFloorFromFootPlane` | Worn flexi prims rest on the floor you stand on. | on |
+| `DSFlexiTerrainCollision` | Flexi prims also rest on the ground, even ones nobody wears. | off |
+| `DSFlexiGroundFriction` | How much a flexi on the floor resists sliding, 0 (ice) to 1 (stays put). | 1 |
+| `DSFlexiFloorOffset` | Extra gap above the floor, in metres. | 0.05 |
+| `DSFlexiCloth` | Cloth mode. | off |
+| `DSFlexiClothShape` | How closely cloth skirts keep their flexi shape, 0 (loose drape) to 1 (almost normal flexi). | 0.05 |
+| `DSFlexiClothMaxDistance` | Past this camera distance, in metres, cloth goes back to normal flexi. | 16 |
+
+With every setting at 0 or off, flexible prims draw exactly as in Firestorm. The flexi data sent by the simulator is unchanged.
+
 ### What changed from Firestorm
 
 All changes are marked `<FS:Outworldz>` in the code.
@@ -40,6 +63,10 @@ All changes are marked `<FS:Outworldz>` in the code.
 - `indra/newview/lldrawpoolwater.cpp`: passes the wave settings to the water shader.
 - `indra/newview/llviewerregion.cpp`: rebuilds the water when the wave settings arrive.
 - `indra/newview/app_settings/shaders/class1/environment/waterV.glsl`: moves the water surface with the same wave formula the simulator uses.
+- `indra/newview/llflexibleobject.h`, `llflexibleobject.cpp`: extra flexi detail, floor collision, and the cloth mode.
+- `indra/newview/llflexicloth.h`, `llflexicloth.cpp` (new): a small Verlet cloth solver.
+- `indra/llmath/llvolume.h`, `llvolume.cpp`: `LLVolume::regenDeformed()`, so the cloth can move the mesh points.
+- `indra/newview/app_settings/settings.xml`: the `DSFlexi*` settings.
 
 ### Licence
 
@@ -84,6 +111,8 @@ git cherry-pick c52e7e69d6 493fdcab6d
 - `Direction`: the direction the waves travel, in compass degrees (0 = north, 90 = east).
 
 With no `PhysXWaves` (Second Life, other physics engines, or waves turned off) the patch changes nothing and the water draws exactly as before. The wave formula (a sum of 4 Gerstner waves in grid-wide metres, timed by the Unix clock) is in `LLWaterWaves` in `llvowater.cpp`. It must match the simulator's wave code (`PhysXWaves.cs` in the [Outworldz PhysX physics module for OpenSim](https://github.com/Outworldz/Opensimulator_Physx)) exactly, so boats float on the crests the viewer draws. If you change one, change both.
+
+**The flexi patch.** The flexible-prim code is in its own patch, [`patches/outworldz-flexifix.patch`](patches/outworldz-flexifix.patch) (8 files, about 1,400 lines), made against this fork at `037f6fbb50` (DreamStorm 7.3.0.82944, Firestorm 7.3.0). It does not need the sea-wave patch. Apply it the same way (`git apply --check`, then `git apply --3way`). It adds two files, so add `llflexicloth.cpp` and `llflexicloth.h` to `indra/newview/CMakeLists.txt` if the patch's change there does not apply.
 
 ### Building it yourself
 

@@ -1,0 +1,1596 @@
+diff --git a/indra/llmath/llvolume.cpp b/indra/llmath/llvolume.cpp
+index e0d3161b39..2f64b1f993 100644
+--- a/indra/llmath/llvolume.cpp
++++ b/indra/llmath/llvolume.cpp
+@@ -2023,6 +2023,18 @@ void LLVolume::regen()
+     createVolumeFaces();
+ }
+ 
++// <FS:Outworldz> FlexiFix cloth
++void LLVolume::regenDeformed(const mesh_deform_callback_t& deform)
++{
++    generate();
++    if (deform)
++    {
++        deform(*this, mMesh);
++    }
++    createVolumeFaces();
++}
++// </FS:Outworldz>
++
+ void LLVolume::genTangents(S32 face)
+ {
+     // generate legacy tangents for the specified face
+diff --git a/indra/llmath/llvolume.h b/indra/llmath/llvolume.h
+index 0eb1153f57..d864d6d204 100644
+--- a/indra/llmath/llvolume.h
++++ b/indra/llmath/llvolume.h
+@@ -28,6 +28,7 @@
+ #define LL_LLVOLUME_H
+ 
+ #include <iostream>
++#include <functional> // <FS:Outworldz/> FlexiFix cloth: regenDeformed()
+ 
+ class LLProfileParams;
+ class LLPathParams;
+@@ -1046,6 +1047,13 @@ public:
+     void setDirty() { mPathp->setDirty(); mProfilep->setDirty(); }
+ 
+     void regen();
++    // <FS:Outworldz> FlexiFix cloth: like regen(), but deform may move the mesh
++    // points after they are built from the path and profile and before the faces
++    // (and their normals) are made from them. Only flexible prims in cloth mode
++    // call this; regen() and every other volume are unchanged.
++    typedef std::function<void(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh)> mesh_deform_callback_t;
++    void regenDeformed(const mesh_deform_callback_t& deform);
++    // </FS:Outworldz>
+     void genTangents(S32 face);
+ 
+     bool isConvex() const;
+diff --git a/indra/newview/CMakeLists.txt b/indra/newview/CMakeLists.txt
+index 869b2f7338..90259cf488 100644
+--- a/indra/newview/CMakeLists.txt
++++ b/indra/newview/CMakeLists.txt
+@@ -319,6 +319,7 @@ set(viewer_SOURCE_FILES
+     llfilteredwearablelist.cpp
+     llfirstuse.cpp
+     llflexibleobject.cpp
++    llflexicloth.cpp
+     llfloater360capture.cpp
+     llfloaterabout.cpp
+     llfloateravatarwelcomepack.cpp
+@@ -1194,6 +1195,7 @@ set(viewer_HEADER_FILES
+     llfilteredwearablelist.h
+     llfirstuse.h
+     llflexibleobject.h
++    llflexicloth.h
+     llfloater360capture.h
+     llfloaterabout.h
+     llfloateravatarwelcomepack.h
+diff --git a/indra/newview/app_settings/settings.xml b/indra/newview/app_settings/settings.xml
+index 6e6050b7cd..d9c3ed354a 100644
+--- a/indra/newview/app_settings/settings.xml
++++ b/indra/newview/app_settings/settings.xml
+@@ -12452,6 +12452,96 @@ Change of this parameter will affect the layout of buttons in notification toast
+       <key>Value</key>
+       <real>1.0</real>
+     </map>
++    <!-- <FS:Outworldz> FlexiFix: experimental flexible prim settings, all off by default -->
++    <key>DSFlexiExtraRenderSubdivisions</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: extra levels of detail (0-3) drawn on flexible prims, each doubling the drawn sections, up to 64. Smoother curves; motion is unchanged. 0 = standard viewer behavior. DreamStorm default 3.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>U32</string>
++      <key>Value</key>
++      <integer>3</integer>
++    </map>
++    <key>DSFlexiTerrainCollision</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: flexible prims rest on the terrain instead of passing through it (viewer only).</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>Boolean</string>
++      <key>Value</key>
++      <integer>0</integer>
++    </map>
++    <key>DSFlexiFloorFromFootPlane</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: flexible prims worn by an avatar rest on the floor that avatar is standing on, including prim floors (viewer only). DreamStorm default on.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>Boolean</string>
++      <key>Value</key>
++      <integer>1</integer>
++    </map>
++    <key>DSFlexiGroundFriction</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: how much flexible prims touching the floor resist sliding, 0 (ice) to 1 (stuck). Used only when DSFlexiTerrainCollision or DSFlexiFloorFromFootPlane is on.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>F32</string>
++      <key>Value</key>
++      <real>1.0</real>
++    </map>
++    <key>DSFlexiFloorOffset</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: extra gap in meters (-0.5 to 0.5) between the floor and flexible prims resting on it. Raise it if a flexi still shows through the floor. Used only when DSFlexiTerrainCollision or DSFlexiFloorFromFootPlane is on.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>F32</string>
++      <key>Value</key>
++      <real>0.05</real>
++    </map>
++    <key>DSFlexiCloth</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: draw flexible prims as cloth (viewer only). Round prims hang as a tube (skirts); boxes and other shapes hang as a sheet (capes, trains). Beyond DSFlexiClothMaxDistance they go back to normal flexi motion.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>Boolean</string>
++      <key>Value</key>
++      <integer>0</integer>
++    </map>
++    <key>DSFlexiClothMaxDistance</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: flexible prims farther than this from the camera, in meters, use normal flexi motion instead of cloth. Used only when DSFlexiCloth is on.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>F32</string>
++      <key>Value</key>
++      <real>16.0</real>
++    </map>
++    <key>DSFlexiClothShape</key>
++    <map>
++      <key>Comment</key>
++      <string>EXPERIMENTAL: how closely round flexible prims (skirts) drawn as cloth follow their normal flexi shape (size, taper, flare and the way they point). 0 = drape like loose cloth, 0.05 = a light hold on the flexi shape (default, chosen in-world), 1 = almost exactly the normal flexi. Used only when DSFlexiCloth is on.</string>
++      <key>Persist</key>
++      <integer>1</integer>
++      <key>Type</key>
++      <string>F32</string>
++      <key>Value</key>
++      <real>0.05</real>
++    </map>
++    <!-- </FS:Outworldz> -->
+     <key>RenderFogRatio</key>
+     <map>
+       <key>Comment</key>
+diff --git a/indra/newview/llflexibleobject.cpp b/indra/newview/llflexibleobject.cpp
+index 1d3269954b..ee552f92be 100644
+--- a/indra/newview/llflexibleobject.cpp
++++ b/indra/newview/llflexibleobject.cpp
+@@ -42,6 +42,7 @@
+ #include "llviewerregion.h"
+ #include "llworld.h"
+ #include "llvoavatar.h"
++#include "llsurface.h" // <FS:Outworldz/> FlexiFix: terrain height
+ 
+ static const F32 SEC_PER_FLEXI_FRAME = 1.f / 60.f; // 60 flexi updates per second
+ /*static*/ F32 LLVolumeImplFlexible::sUpdateFactor = 1.0f;
+@@ -66,6 +67,7 @@ LLVolumeImplFlexible::LLVolumeImplFlexible(LLViewerObject* vo, LLFlexibleObjectD
+     mSimulateRes = 0;
+     mCollisionSphereRadius = 0.f;
+     mRenderRes = -1;
++    mClothActive = false; // <FS:Outworldz/> FlexiFix cloth
+ 
+     if(mVO->mDrawable.notNull())
+     {
+@@ -132,10 +134,17 @@ void LLVolumeImplFlexible::onShift(const LLVector4a &shift_vector)
+ {
+     //VECTORIZE THIS
+     LLVector3 shift(shift_vector.getF32ptr());
+-    for (int section = 0; section < (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1; ++section)
++    for (int section = 0; section < (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1; ++section) // <FS:Outworldz/> FlexiFix: whole array
+     {
+         mSection[section].mPosition += shift;
+     }
++    // <FS:Outworldz> FlexiFix cloth: particles are in agent space too
++    if (mCloth.isInitialized())
++    {
++        mCloth.shift(shift.mV[VX], shift.mV[VY], shift.mV[VZ]);
++        mClothFramePos += shift;
++    }
++    // </FS:Outworldz>
+ }
+ 
+ //-----------------------------------------------------------------------------------------------
+@@ -230,6 +239,483 @@ void LLVolumeImplFlexible::remapSections(LLFlexibleObjectSection *source, S32 so
+     }
+ }
+ 
++// <FS:Outworldz> FlexiFix: floor collision helpers
++namespace
++{
++    // Half of a section's cross-section extent along world Z. The profile is
++    // scale.x by scale.y in the section's local X/Y plane, turned by rot (axis
++    // twist * section rotation, as the path point is drawn). Box bound, so it
++    // also covers round profiles.
++    F32 ds_flexi_half_height(const LLVector2& scale, const LLQuaternion& rot)
++    {
++        const LLVector3 ex = LLVector3::x_axis * rot;
++        const LLVector3 ey = LLVector3::y_axis * rot;
++        return 0.5f * (scale.mV[0] * fabsf(ex.mV[VZ]) + scale.mV[1] * fabsf(ey.mV[VZ]));
++    }
++
++    // If pos (len from parent) is below min_z, swing it up about parent so its
++    // Z is min_z (or straight up if that is out of reach), keeping the distance
++    // to parent and the sideways heading. Returns true if pos was moved.
++    bool ds_flexi_lift_keep_length(const LLVector3& parent, LLVector3& pos, F32 len,
++                                   F32 min_z, const LLVector3& fallback_heading)
++    {
++        if (pos.mV[VZ] >= min_z || len <= 0.f)
++        {
++            return false;
++        }
++        const F32 dz = llclamp(min_z - parent.mV[VZ], -len, len);
++        LLVector3 heading(pos.mV[VX] - parent.mV[VX], pos.mV[VY] - parent.mV[VY], 0.f);
++        if (heading.magVecSquared() < 1.e-12f)
++        {
++            heading.setVec(fallback_heading.mV[VX], fallback_heading.mV[VY], 0.f);
++        }
++        if (heading.magVecSquared() < 1.e-12f)
++        {
++            heading = LLVector3::x_axis;
++        }
++        heading.normVec();
++        const F32 horizontal = sqrtf(llmax(len * len - dz * dz, 0.f));
++        pos = parent + heading * horizontal + LLVector3(0.f, 0.f, dz);
++        return true;
++    }
++}
++
++// FlexiFix: floor height in agent Z under pos_agent, or -F32_MAX.
++F32 LLVolumeImplFlexible::sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
++                                       bool use_terrain, const LLVOAvatar* avatarp) const
++{
++    F32 floor_z = -F32_MAX;
++
++    if (use_terrain)
++    {
++        // Use the object's region if the point is inside it, else look it up
++        LLViewerRegion* land_regionp = regionp;
++        LLVector3 pos_region;
++        if (land_regionp)
++        {
++            pos_region = pos_agent - land_regionp->getOriginAgent();
++            const F32 width = land_regionp->getWidth();
++            if (pos_region.mV[VX] < 0.f || pos_region.mV[VX] > width ||
++                pos_region.mV[VY] < 0.f || pos_region.mV[VY] > width)
++            {
++                land_regionp = nullptr;
++            }
++        }
++        if (!land_regionp)
++        {
++            land_regionp = LLWorld::getInstance()->getRegionFromPosAgent(pos_agent);
++            if (land_regionp)
++            {
++                pos_region = pos_agent - land_regionp->getOriginAgent();
++            }
++        }
++        if (land_regionp)
++        {
++            floor_z = land_regionp->getLand().resolveHeightRegion(pos_region) + land_regionp->getOriginAgent().mV[VZ];
++        }
++    }
++
++    if (avatarp && avatarp->getRegion() && !avatarp->mFootPlane.isExactlyClear())
++    {
++        // The foot plane (n . p = w) is in the avatar's region coordinates
++        const LLVector4& plane = avatarp->mFootPlane;
++        const F32 nz = plane.mV[VZ];
++        if (nz > 0.1f) // only floors that face upward
++        {
++            const LLVector3 origin = avatarp->getRegion()->getOriginAgent();
++            const LLVector3 p = pos_agent - origin;
++            const F32 plane_z = (plane.mV[VW] - plane.mV[VX] * p.mV[VX] - plane.mV[VY] * p.mV[VY]) / nz + origin.mV[VZ];
++            floor_z = llmax(floor_z, plane_z);
++        }
++    }
++
++    return floor_z;
++}
++// </FS:Outworldz>
++
++// <FS:Outworldz> FlexiFix cloth (DSFlexiCloth)
++namespace
++{
++    // Catmull-Rom weights for the point t (0..1) between taps 1 and 2 of four
++    void ds_cloth_cr_weights(F32 t, F32 w[4])
++    {
++        const F32 t2 = t * t;
++        const F32 t3 = t2 * t;
++        w[0] = 0.5f * (-t3 + 2.f * t2 - t);
++        w[1] = 0.5f * (3.f * t3 - 5.f * t2 + 2.f);
++        w[2] = 0.5f * (-3.f * t3 + 4.f * t2 + t);
++        w[3] = 0.5f * (t3 - t2);
++    }
++
++    // The four grid lines around coordinate x (0..n-1, or 0..n wrapping round)
++    // and their smooth-curve weights
++    struct DSClothTaps
++    {
++        S32 mIndex[4];
++        F32 mWeight[4];
++    };
++
++    DSClothTaps ds_cloth_taps(F32 x, S32 n, bool wrap)
++    {
++        DSClothTaps taps;
++        S32 i0;
++        if (wrap)
++        {
++            x = fmodf(x, (F32) n);
++            if (x < 0.f)
++            {
++                x += (F32) n;
++            }
++            i0 = llclamp(llfloor(x), 0, n - 1);
++        }
++        else
++        {
++            x = llclamp(x, 0.f, (F32) (n - 1));
++            i0 = llclamp(llfloor(x), 0, n - 2);
++        }
++        ds_cloth_cr_weights(llclamp(x - (F32) i0, 0.f, 1.f), taps.mWeight);
++        for (S32 k = 0; k < 4; ++k)
++        {
++            const S32 index = i0 - 1 + k;
++            taps.mIndex[k] = wrap ? ((index % n) + n) % n : llclamp(index, 0, n - 1);
++        }
++        return taps;
++    }
++}
++
++// Where each cloth particle sits on the flexi chain as it hangs now: the rest
++// ring (or edge) of its row, placed and turned with the chain at that height.
++void LLVolumeImplFlexible::clothShapeFromChain(S32 cols, S32 rows, F32* out_xyz) const
++{
++    const S32 num_sections = 1 << llclamp(mSimulateRes, 0, DS_FLEXI_MAX_LOCAL_SECTIONS);
++    for (S32 r = 0; r < rows; ++r)
++    {
++        const F32 f = (F32) r / (F32) (rows - 1) * (F32) num_sections;
++        const S32 k = llclamp(llfloor(f), 0, num_sections - 1);
++        const F32 frac = llclamp(f - (F32) k, 0.f, 1.f);
++        const LLVector3 center = lerp(mSection[k].mPosition, mSection[k + 1].mPosition, frac);
++        const LLQuaternion rot = slerp(frac, mSection[k].mRotation, mSection[k + 1].mRotation);
++        for (S32 c = 0; c < cols; ++c)
++        {
++            const S32 i = r * cols + c;
++            const LLVector3 p = center + LLVector3(mClothRest[3 * i], mClothRest[3 * i + 1], 0.f) * rot;
++            out_xyz[3 * i + 0] = p.mV[VX];
++            out_xyz[3 * i + 1] = p.mV[VY];
++            out_xyz[3 * i + 2] = p.mV[VZ];
++        }
++    }
++}
++
++bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,
++                                       const LLVector3& scale, bool collide_floor, LLViewerRegion* floor_regionp,
++                                       bool use_terrain, const LLVOAvatar* floor_avatarp,
++                                       F32 floor_offset, F32 ground_friction)
++{
++    LLVolume* volume = mVO->getVolume();
++    if (!volume || !mAttributes || !mVO->mDrawable || !scale.isFinite() || !frame_pos.isFinite() ||
++        scale.mV[VX] <= 0.f || scale.mV[VY] <= 0.f || scale.mV[VZ] <= 0.f)
++    {
++        return false;
++    }
++
++    // Round profile: a closed tube (skirt). Anything else: an open sheet across X (cape, train).
++    const LLVolumeParams& volume_params = volume->getParams();
++    const bool tube = (volume_params.getProfileParams().getCurveType() & LL_PCODE_PROFILE_MASK) == LL_PCODE_PROFILE_CIRCLE;
++    const LLPathParams& path_params = volume_params.getPathParams();
++    const LLVector2 taper_begin = path_params.getBeginScale();
++    const LLVector2 taper_end = path_params.getEndScale();
++
++    // Rows down the prim: twice the flexi's sections for its softness (5 to 17 rows).
++    // Columns: about one per 10 cm around (tube) or across (sheet).
++    const S32 softness = llclamp(mAttributes->getSimulateLOD(), 0, 3);
++    const S32 rows = llclamp(2 << softness, 4, LLFlexiCloth::MAX_ROWS - 1) + 1;
++    S32 cols;
++    if (tube)
++    {
++        const F32 circumference = F_PI * 0.5f * (scale.mV[VX] + scale.mV[VY]);
++        cols = llclamp(ll_round(circumference / 0.1f), 8, LLFlexiCloth::MAX_COLS);
++    }
++    else
++    {
++        cols = llclamp(ll_round(scale.mV[VX] / 0.1f) + 1, LLFlexiCloth::MIN_COLS, LLFlexiCloth::MAX_COLS);
++    }
++    const S32 count = cols * rows;
++
++    const bool rebuild = !mCloth.isInitialized() || mCloth.getCols() != cols || mCloth.getRows() != rows ||
++                         mCloth.isTube() != tube || dist_vec(scale, mClothScale) > 0.001f ||
++                         taper_begin != mClothTaperBegin || taper_end != mClothTaperEnd ||
++                         dist_vec(frame_pos, mClothFramePos) > 10.f; // teleport or big jump: start over
++    if (rebuild)
++    {
++        // Rest shape in prim space: the prim standing straight, base at -Z/2
++        mClothRest.resize(3 * count);
++        for (S32 r = 0; r < rows; ++r)
++        {
++            const F32 t = (F32) r / (F32) (rows - 1);
++            const F32 z = (t - 0.5f) * scale.mV[VZ];
++            const F32 sx = scale.mV[VX] * lerp(taper_begin.mV[VX], taper_end.mV[VX], t);
++            const F32 sy = scale.mV[VY] * lerp(taper_begin.mV[VY], taper_end.mV[VY], t);
++            for (S32 c = 0; c < cols; ++c)
++            {
++                F32* p = &mClothRest[3 * (r * cols + c)];
++                if (tube)
++                {
++                    const F32 angle = F_TWO_PI * (F32) c / (F32) cols;
++                    p[0] = 0.5f * sx * cosf(angle);
++                    p[1] = 0.5f * sy * sinf(angle);
++                }
++                else
++                {
++                    p[0] = ((F32) c / (F32) (cols - 1) - 0.5f) * sx;
++                    p[1] = 0.f;
++                }
++                p[2] = z;
++            }
++        }
++
++        // Start from the flexi chain as it hangs now, so switching to cloth is smooth
++        std::vector<F32> start(3 * count);
++        clothShapeFromChain(cols, rows, &start[0]);
++        if (!mCloth.init(cols, rows, tube, &mClothRest[0], &start[0]))
++        {
++            return false;
++        }
++        mClothScale = scale;
++        mClothTaperBegin = taper_begin;
++        mClothTaperEnd = taper_end;
++    }
++    mClothFramePos = frame_pos;
++
++    // Buffers: held-row targets, floor height, wind and shape target per particle
++    mClothScratch.resize(3 * cols + 7 * count);
++    F32* pins = &mClothScratch[0];
++    F32* floor_z = pins + 3 * cols;
++    F32* accel = floor_z + count;
++    F32* shape_targets = accel + 3 * count;
++    for (S32 c = 0; c < cols; ++c)
++    {
++        const LLVector3 p = frame_pos + LLVector3(&mClothRest[3 * c]) * frame_rot;
++        pins[3 * c + 0] = p.mV[VX];
++        pins[3 * c + 1] = p.mV[VY];
++        pins[3 * c + 2] = p.mV[VZ];
++    }
++
++    const F32* positions = mCloth.getPositions();
++    if (collide_floor)
++    {
++        for (S32 i = 0; i < count; ++i)
++        {
++            floor_z[i] = sampleFloorZ(floor_regionp, LLVector3(positions + 3 * i), use_terrain, floor_avatarp);
++        }
++    }
++
++    const F32 wind_sensitivity = mAttributes->getWindSensitivity();
++    LLViewerRegion* wind_regionp = gAgent.getRegion();
++    const bool use_wind = wind_sensitivity > 0.001f && wind_regionp;
++    if (use_wind)
++    {
++        for (S32 i = 0; i < count; ++i)
++        {
++            const LLVector3 pos_region = wind_regionp->getPosRegionFromAgent(LLVector3(positions + 3 * i));
++            const LLVector3 wind = wind_regionp->mWind.getVelocity(pos_region) * (wind_sensitivity * 0.5f);
++            accel[3 * i + 0] = wind.mV[VX];
++            accel[3 * i + 1] = wind.mV[VY];
++            accel[3 * i + 2] = wind.mV[VZ];
++        }
++    }
++
++    // The flexi parameters, as cloth: gravity 1 = earth gravity, drag = air
++    // resistance, tension = how much the cloth resists folding, force = push.
++    LLFlexiCloth::Params params;
++    params.mGravity = mAttributes->getGravity() * 9.8f;
++    const LLVector3 user_force = mAttributes->getUserForce();
++    params.mAccel[0] = user_force.mV[VX];
++    params.mAccel[1] = user_force.mV[VY];
++    params.mAccel[2] = user_force.mV[VZ];
++    params.mDamping = 1.f + mAttributes->getAirFriction() * 0.5f;
++    params.mBendStiffness = llmax(mAttributes->getTension() * 0.002f, 0.0005f);
++    params.mIterations = 4;
++    params.mFloorFriction = ground_friction;
++    if (tube)
++    {
++        // Round prims keep the flexi's own shape (size, taper, flare, the way
++        // it points), with cloth sway on top; 0 = drape like loose cloth
++        static LLCachedControl<F32> cloth_shape(gSavedSettings, "DSFlexiClothShape", 0.05f);
++        const F32 shape = llclamp((F32) cloth_shape, 0.f, 1.f);
++        if (shape > 0.f)
++        {
++            clothShapeFromChain(cols, rows, shape_targets);
++            params.mShapeStiffness = shape * shape * 0.5f; // per 1/60 s substep
++            params.mShapeTargets = shape_targets;
++        }
++    }
++    params.mFloorMargin = floor_offset +
++        (tube ? 0.f : 0.5f * scale.mV[VY] * llmax(taper_begin.mV[VY], taper_end.mV[VY]));
++
++    mCloth.step(seconds, params, pins, collide_floor ? floor_z : nullptr, use_wind ? accel : nullptr);
++    if (!mCloth.isFinite())
++    {
++        mCloth.clear();
++        return false;
++    }
++
++    // Particles to prim space (as the path points are), and see if they moved
++    // enough to rebuild the mesh
++    positions = mCloth.getPositions();
++    const LLQuaternion to_local = ~frame_rot;
++    const F32 threshold = 0.001f * llmax(mVO->mDrawable->mDistanceWRTCamera, 0.1f);
++    bool moved = (S32) mClothLocal.size() != 3 * count;
++    mClothLocal.resize(3 * count);
++    for (S32 i = 0; i < count; ++i)
++    {
++        const LLVector3 local = (LLVector3(positions + 3 * i) - frame_pos) * to_local;
++        F32* out = &mClothLocal[3 * i];
++        if (!moved && dist_vec(local, LLVector3(out)) > threshold)
++        {
++            moved = true;
++        }
++        out[0] = local.mV[VX];
++        out[1] = local.mV[VY];
++        out[2] = local.mV[VZ];
++    }
++    if (moved)
++    {
++        mUpdated = false;
++    }
++    return true;
++}
++
++void LLVolumeImplFlexible::deformClothMesh(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh) const
++{
++    const S32 cols = mCloth.getCols();
++    const S32 rows = mCloth.getRows();
++    if (cols < 2 || rows < 2 || (S32) mClothLocal.size() != 3 * cols * rows)
++    {
++        return;
++    }
++    const LLPath& path = volume.getPath();
++    const LLProfile& profile = volume.getProfile();
++    const S32 path_count = (S32) path.mPath.size();
++    const S32 profile_count = (S32) profile.mProfile.size();
++    if (path_count < 2 || profile_count < 1 || (S32) mesh.size() != path_count * profile_count)
++    {
++        return;
++    }
++    const bool tube = mCloth.isTube();
++    const F32* grid = &mClothLocal[0];
++
++    // Tube: centre of each row. Sheet: surface normal at each particle.
++    std::vector<LLVector3> centers(rows);
++    std::vector<LLVector3> normals;
++    if (tube)
++    {
++        for (S32 r = 0; r < rows; ++r)
++        {
++            LLVector3 sum;
++            for (S32 c = 0; c < cols; ++c)
++            {
++                sum += LLVector3(grid + 3 * (r * cols + c));
++            }
++            centers[r] = sum * (1.f / (F32) cols);
++        }
++    }
++    else
++    {
++        normals.resize(rows * cols);
++        for (S32 r = 0; r < rows; ++r)
++        {
++            for (S32 c = 0; c < cols; ++c)
++            {
++                const LLVector3 across = LLVector3(grid + 3 * (r * cols + llmin(c + 1, cols - 1))) -
++                                         LLVector3(grid + 3 * (r * cols + llmax(c - 1, 0)));
++                const LLVector3 down = LLVector3(grid + 3 * (llmin(r + 1, rows - 1) * cols + c)) -
++                                       LLVector3(grid + 3 * (llmax(r - 1, 0) * cols + c));
++                LLVector3 normal = down % across;
++                if (normal.normVec() < 1.e-6f)
++                {
++                    normal = LLVector3::y_axis;
++                }
++                normals[r * cols + c] = normal;
++            }
++        }
++    }
++
++    // Each profile point: where it sits around/across the cloth, and how far
++    // out (tube: fraction of the radius) or through it (sheet: profile Y)
++    std::vector<DSClothTaps> column_taps(profile_count);
++    std::vector<F32> offsets(profile_count);
++    for (S32 t = 0; t < profile_count; ++t)
++    {
++        const F32* pt = profile.mProfile[t].getF32ptr();
++        if (tube)
++        {
++            F32 angle = atan2f(pt[1], pt[0]);
++            if (angle < 0.f)
++            {
++                angle += F_TWO_PI;
++            }
++            column_taps[t] = ds_cloth_taps(angle / F_TWO_PI * (F32) cols, cols, true);
++            offsets[t] = 2.f * sqrtf(pt[0] * pt[0] + pt[1] * pt[1]);
++        }
++        else
++        {
++            column_taps[t] = ds_cloth_taps((pt[0] + 0.5f) * (F32) (cols - 1), cols, false);
++            offsets[t] = pt[1];
++        }
++    }
++
++    for (S32 s = 0; s < path_count; ++s)
++    {
++        const DSClothTaps row_taps = ds_cloth_taps((F32) s / (F32) (path_count - 1) * (F32) (rows - 1), rows, false);
++        const F32 thickness = path.mPath[s].mScale.getF32ptr()[1];
++        LLVector3 center;
++        if (tube)
++        {
++            for (S32 a = 0; a < 4; ++a)
++            {
++                center += centers[row_taps.mIndex[a]] * row_taps.mWeight[a];
++            }
++        }
++        for (S32 t = 0; t < profile_count; ++t)
++        {
++            const DSClothTaps& col = column_taps[t];
++            LLVector3 surface;
++            LLVector3 normal;
++            for (S32 a = 0; a < 4; ++a)
++            {
++                for (S32 b = 0; b < 4; ++b)
++                {
++                    const F32 weight = row_taps.mWeight[a] * col.mWeight[b];
++                    const S32 index = row_taps.mIndex[a] * cols + col.mIndex[b];
++                    surface += LLVector3(grid + 3 * index) * weight;
++                    if (!tube)
++                    {
++                        normal += normals[index] * weight;
++                    }
++                }
++            }
++            LLVector3 point;
++            if (tube)
++            {
++                point = center + (surface - center) * offsets[t];
++            }
++            else
++            {
++                if (normal.normVec() < 1.e-6f)
++                {
++                    normal = LLVector3::y_axis;
++                }
++                point = surface + normal * (offsets[t] * thickness);
++            }
++            if (point.isFinite())
++            {
++                mesh[s * profile_count + t].load3(point.mV);
++            }
++        }
++    }
++}
++// </FS:Outworldz>
++
+ //-----------------------------------------------------------------------------
+ void LLVolumeImplFlexible::setAttributesOfAllSections(LLVector3* inScale)
+ {
+@@ -299,13 +785,33 @@ void LLVolumeImplFlexible::updateRenderRes()
+ 
+     S32 new_res = mAttributes->getSimulateLOD();
+ 
++    // <FS:Outworldz> FlexiFix: optional extra rendered subdivisions (a finer
++    // curve through the same simulated sections). At 0 (the default) max_res
++    // stays FLEXIBLE_OBJECT_MAX_SECTIONS and nothing below changes.
++    // Extra *simulated* sections were tried and removed: the per-section
++    // tension/angle tuning made the free end oscillate without settling.
++    static LLCachedControl<U32> extra_render_setting(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 3);
++    const S32 extra_render = (S32) llmin((U32) extra_render_setting, 3U);
++    S32 max_res = (S32) FLEXIBLE_OBJECT_MAX_SECTIONS;
++    if (extra_render > 0)
++    {
++        max_res = llmin((S32) FLEXIBLE_OBJECT_MAX_SECTIONS + extra_render, DS_FLEXI_MAX_LOCAL_SECTIONS);
++    }
++    // </FS:Outworldz>
++
+ #if 1 //optimal approximation of previous behavior that doesn't rely on atan2
+     F32 app_angle = mVO->getScale().mV[2]/drawablep->mDistanceWRTCamera;
+ 
+     // Rendering sections increases with visible angle on the screen
+     F32 render_res = 12.f * app_angle;
+-    mRenderRes = (render_res > (F32) FLEXIBLE_OBJECT_MAX_SECTIONS) ? (S32) FLEXIBLE_OBJECT_MAX_SECTIONS
++    // <FS:Outworldz> FlexiFix: shift the screen-size curve up by the extra levels
++    if (extra_render > 0)
++    {
++        render_res += (F32) extra_render;
++    }
++    mRenderRes = (render_res > (F32) max_res) ? max_res
+                : (render_res > 0.f) ? (S32) render_res : 0;
++    // </FS:Outworldz>
+ 
+ #else //legacy behavior
+     //number of segments only cares about z axis
+@@ -315,7 +821,7 @@ void LLVolumeImplFlexible::updateRenderRes()
+     mRenderRes = (S32)(FLEXIBLE_OBJECT_MAX_SECTIONS*4*app_angle*DEG_TO_RAD/LLViewerCamera::getInstance()->getView());
+ #endif
+ 
+-    mRenderRes = llclamp(mRenderRes, new_res-1, (S32) FLEXIBLE_OBJECT_MAX_SECTIONS);
++    mRenderRes = llclamp(mRenderRes, new_res-1, max_res); // <FS:Outworldz/> FlexiFix: max_res == FLEXIBLE_OBJECT_MAX_SECTIONS by default
+ 
+     // Throttle back simulation of segments we're not rendering
+     if (mRenderRes < new_res)
+@@ -509,6 +1015,39 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+ 
+     F32 force_factor = section_length * secondsThisFrame;
+ 
++    // <FS:Outworldz> FlexiFix: optional floor collision (terrain and/or the
++    // wearer's foot plane). Both settings default off; then nothing below runs.
++    static LLCachedControl<bool> terrain_collision(gSavedSettings, "DSFlexiTerrainCollision", false);
++    static LLCachedControl<bool> foot_plane_floor(gSavedSettings, "DSFlexiFloorFromFootPlane", true);
++    static LLCachedControl<F32> ground_friction_setting(gSavedSettings, "DSFlexiGroundFriction", 1.0f);
++    static LLCachedControl<F32> floor_offset_setting(gSavedSettings, "DSFlexiFloorOffset", 0.05f);
++    const bool use_terrain = terrain_collision;
++    const LLVOAvatar* floor_avatarp = nullptr;
++    if (foot_plane_floor && mVO->isAttachment())
++    {
++        LLViewerObject* parent = (LLViewerObject*) mVO->getParent();
++        while (parent && !parent->isAvatar())
++        {
++            parent = (LLViewerObject*) parent->getParent();
++        }
++        floor_avatarp = (const LLVOAvatar*) parent;
++    }
++    const bool collide_floor = use_terrain || floor_avatarp;
++    LLViewerRegion* floor_regionp = nullptr;
++    F32 ground_friction = 0.f;
++    F32 floor_offset = 0.f;
++    LLVector3 floor_heading; // which way a section straight below its parent falls over
++    if (collide_floor)
++    {
++        // One region lookup per object per update; sampleFloorZ falls back
++        // to a per-point lookup only for points outside this region.
++        floor_regionp = LLWorld::getInstance()->getRegionFromPosAgent(AnchorPosition);
++        ground_friction = llclamp((F32) ground_friction_setting, 0.f, 1.f);
++        floor_offset = llclamp((F32) floor_offset_setting, -0.5f, 0.5f);
++        floor_heading = LLVector3::x_axis * BaseRotation;
++    }
++    // </FS:Outworldz>
++
+     // Update simulated sections
+     for (i=1; i<=num_sections; ++i)
+     {
+@@ -593,6 +1132,25 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+         //------------------------------------------------------------------------------------------
+         mSection[i].mPosition += mSection[i].mVelocity * momentum;
+ 
++        // <FS:Outworldz> FlexiFix: floor collision, first pass. Lifts the free
++        // position before the length/angle clamp; the clamp can pull it back
++        // down, so a second pass follows the clamp. The margin is the section's
++        // half-height along world Z (last frame's orientation) plus DSFlexiFloorOffset.
++        if (collide_floor)
++        {
++            const F32 floor_z = sampleFloorZ(floor_regionp, mSection[i].mPosition, use_terrain, floor_avatarp);
++            const F32 margin = floor_offset +
++                ds_flexi_half_height(mSection[i].mScale, mSection[i].mAxisRotation * mSection[i].mRotation);
++            if (floor_z > -F32_MAX && mSection[i].mPosition.mV[VZ] < floor_z + margin)
++            {
++                mSection[i].mPosition.mV[VZ] = floor_z + margin;
++                // Ground friction: pull the sideways step back toward last frame's spot
++                mSection[i].mPosition.mV[VX] -= (mSection[i].mPosition.mV[VX] - lastPosition.mV[VX]) * ground_friction;
++                mSection[i].mPosition.mV[VY] -= (mSection[i].mPosition.mV[VY] - lastPosition.mV[VY]) * ground_friction;
++            }
++        }
++        // </FS:Outworldz>
++
+         //------------------------------------------------------------------------------------------
+         // clamp length & rotation
+         //------------------------------------------------------------------------------------------
+@@ -621,6 +1179,33 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+         mSection[i].mPosition = parentSectionPosition + mSection[i].mDirection * section_length;
+         mSection[i].mRotation = segment_rotation;
+ 
++        // <FS:Outworldz> FlexiFix: floor collision, second pass. The bend limit
++        // (max_angle) above can leave a section still heading down through the
++        // floor; swing it up about its parent, keeping the section length, and
++        // turn its direction and rotation by the same amount.
++        if (collide_floor)
++        {
++            const F32 floor_z = sampleFloorZ(floor_regionp, mSection[i].mPosition, use_terrain, floor_avatarp);
++            if (floor_z > -F32_MAX)
++            {
++                const F32 min_z = floor_z + floor_offset +
++                    ds_flexi_half_height(mSection[i].mScale, mSection[i].mAxisRotation * mSection[i].mRotation);
++                LLVector3 lifted = mSection[i].mPosition;
++                if (ds_flexi_lift_keep_length(parentSectionPosition, lifted, section_length, min_z, floor_heading))
++                {
++                    LLVector3 lifted_dir = lifted - parentSectionPosition;
++                    lifted_dir.normVec();
++                    LLQuaternion lift_rotation;
++                    lift_rotation.shortestArc(mSection[i].mDirection, lifted_dir);
++                    mSection[i].mDirection = lifted_dir;
++                    mSection[i].mPosition = lifted;
++                    mSection[i].mRotation = mSection[i].mRotation * lift_rotation;
++                    parentSegmentRotation = mSection[i].mRotation;
++                }
++            }
++        }
++        // </FS:Outworldz>
++
+         if (i > 1)
+         {
+             // Propogate half the rotation up to the parent
+@@ -667,6 +1252,37 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+     // i = NumSections
+     mSection[i].mdPosition = (mSection[i].mPosition - mSection[i-1].mPosition) * inv_section_length;
+ 
++    // <FS:Outworldz> FlexiFix cloth: with DSFlexiCloth on, a cloth grid shapes
++    // the mesh (see doFlexibleRebuild); the chain above keeps running so the
++    // cloth can start from it and the prim can fall back to it at a distance.
++    // With the setting off (the default) nothing here runs.
++    static LLCachedControl<bool> cloth_setting(gSavedSettings, "DSFlexiCloth", false);
++    if (cloth_setting || mClothActive || mCloth.isInitialized())
++    {
++        static LLCachedControl<F32> cloth_max_distance(gSavedSettings, "DSFlexiClothMaxDistance", 16.f);
++        bool use_cloth = cloth_setting && !mVO->isHUDAttachment() &&
++                         mVO->mDrawable->mDistanceWRTCamera <= (F32) cloth_max_distance;
++        if (use_cloth)
++        {
++            use_cloth = updateCloth(secondsThisFrame, BasePosition, BaseRotation, anchorScale,
++                                    collide_floor, floor_regionp, use_terrain, floor_avatarp,
++                                    floor_offset, ground_friction);
++        }
++        if (!use_cloth)
++        {
++            mCloth.clear();
++            mClothRest.clear();
++            mClothLocal.clear();
++            mClothScratch.clear();
++        }
++        if (use_cloth != mClothActive)
++        {
++            mClothActive = use_cloth;
++            mUpdated = false; // rebuild the mesh as cloth or as the chain
++        }
++    }
++    // </FS:Outworldz>
++
+     // Create points
+     llassert(mRenderRes > -1);
+     S32 num_render_sections = 1<<mRenderRes;
+@@ -678,9 +1294,38 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+ 
+     LLPath::PathPt *new_point;
+ 
+-    LLFlexibleObjectSection newSection[ (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1 ];
++    LLFlexibleObjectSection newSection[ (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1 ]; // <FS:Outworldz/> FlexiFix: was FLEXIBLE_OBJECT_MAX_SECTIONS
+     remapSections(mSection, mSimulateRes, newSection, mRenderRes);
+ 
++    // <FS:Outworldz> FlexiFix: with extra subdivisions on, take each render point's
++    // twist from the remapped section (newSection) rather than from the simulated
++    // array at the render index. Off by default, so the stock behaviour is kept.
++    static LLCachedControl<U32> extra_render_twist(gSavedSettings, "DSFlexiExtraRenderSubdivisions", 3);
++    const bool remapped_twist = (U32) extra_render_twist > 0;
++    // </FS:Outworldz>
++
++    // <FS:Outworldz> FlexiFix: floor collision for the drawn points. The cubic
++    // remap between simulated sections can bulge below them, and terrain between
++    // two sections can be higher than under either, so lift each drawn point too.
++    if (collide_floor)
++    {
++        for (i = 1; i <= num_render_sections; ++i)
++        {
++            const F32 floor_z = sampleFloorZ(floor_regionp, newSection[i].mPosition, use_terrain, floor_avatarp);
++            if (floor_z > -F32_MAX)
++            {
++                const LLQuaternion& twist = remapped_twist ? newSection[i].mAxisRotation : mSection[i].mAxisRotation;
++                const F32 min_z = floor_z + floor_offset +
++                    ds_flexi_half_height(newSection[i].mScale, twist * newSection[i].mRotation);
++                if (newSection[i].mPosition.mV[VZ] < min_z)
++                {
++                    newSection[i].mPosition.mV[VZ] = min_z;
++                }
++            }
++        }
++    }
++    // </FS:Outworldz>
++
+     //generate transform from global to prim space
+     LLVector3 delta_scale = LLVector3(1,1,1);
+     LLVector3 delta_pos;
+@@ -705,7 +1350,10 @@ void LLVolumeImplFlexible::doFlexibleUpdate()
+     {
+         new_point = &path->mPath[i];
+         LLVector3 pos = newSection[i].mPosition * rel_xform;
+-        LLQuaternion rot = mSection[i].mAxisRotation * newSection[i].mRotation * delta_rot;
++        // <FS:Outworldz> FlexiFix: see remapped_twist above
++        const LLQuaternion& axis_rot = remapped_twist ? newSection[i].mAxisRotation : mSection[i].mAxisRotation;
++        LLQuaternion rot = axis_rot * newSection[i].mRotation * delta_rot;
++        // </FS:Outworldz>
+ 
+         LLVector3 np(new_point->mPos.getF32ptr());
+ 
+@@ -742,7 +1390,19 @@ void LLVolumeImplFlexible::doFlexibleRebuild(bool rebuild_volume)
+         {
+             volume->setDirty();
+         }
+-        volume->regen();
++        // <FS:Outworldz> FlexiFix cloth
++        if (mClothActive && !mClothLocal.empty())
++        {
++            volume->regenDeformed([this](const LLVolume& vol, LLAlignedArray<LLVector4a,64>& mesh)
++                                  {
++                                      deformClothMesh(vol, mesh);
++                                  });
++        }
++        else
++        {
++            volume->regen();
++        }
++        // </FS:Outworldz>
+     }
+ 
+     mUpdated = true;
+diff --git a/indra/newview/llflexibleobject.h b/indra/newview/llflexibleobject.h
+index 958bf9029c..205313c0d5 100644
+--- a/indra/newview/llflexibleobject.h
++++ b/indra/newview/llflexibleobject.h
+@@ -40,6 +40,7 @@
+ #include "llprimitive.h"
+ #include "llvovolume.h"
+ #include "llwind.h"
++#include "llflexicloth.h" // <FS:Outworldz/> FlexiFix cloth
+ 
+ // 10 ms for the whole thing!
+ const F32   FLEXIBLE_OBJECT_TIMESLICE       = 0.003f;
+@@ -47,6 +48,16 @@ const U32   FLEXIBLE_OBJECT_MAX_LOD         = 10;
+ 
+ // See llprimitive.h for LLFlexibleObjectData and DEFAULT/MIN/MAX values
+ 
++// <FS:Outworldz> FlexiFix: viewer-local limit on simulated/rendered sections
++// (2^6 = 64). The wire "softness" stays 0..3 (FLEXIBLE_OBJECT_MAX_SECTIONS);
++// the DSFlexiExtra*Subdivisions debug settings add up to 3 more levels locally.
++const S32   DS_FLEXI_MAX_LOCAL_SECTIONS     = 6;
++static_assert(DS_FLEXI_MAX_LOCAL_SECTIONS >= (S32)FLEXIBLE_OBJECT_MAX_SECTIONS + 3,
++              "local section limit must cover the wire maximum plus the extra levels");
++class LLViewerRegion;
++class LLVOAvatar;
++// </FS:Outworldz>
++
+ //-------------------------------------------------------------------
+ 
+ struct LLFlexibleObjectSection
+@@ -128,7 +139,7 @@ private:
+         bool                        mInitialized;
+         bool                        mUpdated;
+         LLFlexibleObjectData*       mAttributes;
+-        LLFlexibleObjectSection     mSection    [ (1<<FLEXIBLE_OBJECT_MAX_SECTIONS)+1 ];
++        LLFlexibleObjectSection     mSection    [ (1<<DS_FLEXI_MAX_LOCAL_SECTIONS)+1 ]; // <FS:Outworldz/> FlexiFix: was FLEXIBLE_OBJECT_MAX_SECTIONS
+         S32                         mInitializedRes;
+         S32                         mSimulateRes;
+         S32                         mRenderRes;
+@@ -138,6 +149,18 @@ private:
+         F32                         mCollisionSphereRadius;
+         U32                         mID;
+ 
++        // <FS:Outworldz> FlexiFix cloth (DSFlexiCloth). All empty while cloth is off.
++        LLFlexiCloth                mCloth;
++        bool                        mClothActive;       // the cloth shapes the mesh
++        LLVector3                   mClothScale;        // prim scale the cloth was built for
++        LLVector2                   mClothTaperBegin;   // path begin/end scale it was built for
++        LLVector2                   mClothTaperEnd;
++        LLVector3                   mClothFramePos;     // frame position at the last update
++        std::vector<F32>            mClothRest;         // rest shape, prim space
++        std::vector<F32>            mClothLocal;        // particles in prim space, for the mesh
++        std::vector<F32>            mClothScratch;      // per-update buffers (pins, floor, wind)
++        // </FS:Outworldz>
++
+         //--------------------------------------
+         // private methods
+         //--------------------------------------
+@@ -146,6 +169,23 @@ private:
+         void remapSections(LLFlexibleObjectSection *source, S32 source_sections,
+                                          LLFlexibleObjectSection *dest, S32 dest_sections);
+ 
++        // <FS:Outworldz> FlexiFix: floor height (agent Z) under an agent-space point,
++        // from terrain and/or the wearer's foot plane. Returns -F32_MAX if neither applies.
++        F32 sampleFloorZ(LLViewerRegion* regionp, const LLVector3& pos_agent,
++                         bool use_terrain, const LLVOAvatar* avatarp) const;
++
++        // FlexiFix cloth: each particle's place on the flexi chain as it hangs now.
++        void clothShapeFromChain(S32 cols, S32 rows, F32* out_xyz) const;
++        // FlexiFix cloth: advance the cloth one update. Returns false (cloth not
++        // usable this update; draw the normal flexi) on any problem.
++        bool updateCloth(F32 seconds, const LLVector3& frame_pos, const LLQuaternion& frame_rot,
++                         const LLVector3& scale, bool collide_floor, LLViewerRegion* floor_regionp,
++                         bool use_terrain, const LLVOAvatar* floor_avatarp,
++                         F32 floor_offset, F32 ground_friction);
++        // FlexiFix cloth: move the volume's mesh points onto the cloth.
++        void deformClothMesh(const LLVolume& volume, LLAlignedArray<LLVector4a,64>& mesh) const;
++        // </FS:Outworldz>
++
+ public:
+         // Global setting for update rate
+         static F32                  sUpdateFactor;
+diff --git a/indra/newview/llflexicloth.cpp b/indra/newview/llflexicloth.cpp
+new file mode 100644
+index 0000000000..2385da41f3
+--- /dev/null
++++ b/indra/newview/llflexicloth.cpp
+@@ -0,0 +1,424 @@
++/**
++ * @file llflexicloth.cpp
++ * @brief FlexiFix: a small Verlet cloth solver for flexible prims
++ *
++ * $LicenseInfo:firstyear=2026&license=viewerlgpl$
++ * DreamStorm Viewer Source Code (Outworldz)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * $/LicenseInfo$
++ */
++
++// <FS:Outworldz> FlexiFix cloth (whole file). See llflexicloth.h.
++// No viewer headers on purpose: the viewer build force-includes its
++// precompiled header, and a unit test can build this file on its own.
++
++#include "llflexicloth.h"
++
++#include <cmath>
++
++namespace
++{
++    const F32 SUBSTEP_SECONDS = 1.f / 60.f;
++    const S32 MAX_SUBSTEPS = 8;             // at most 0.133 s of motion per step()
++    const F32 MAX_STEP_SECONDS = 0.2f;      // longer gaps are dropped, not simulated
++    const F32 MAX_MOVE_PER_SUBSTEP = 0.5f;  // m; caps speed at 30 m/s
++    const F32 SHEAR_STIFFNESS = 0.5f;
++    const F32 MAX_STRETCH = 1.03f;          // hanging rows may stretch 3% at most
++    const F32 MIN_LENGTH = 1.e-6f;
++
++    inline F32 ds_cloth_clamp(F32 v, F32 lo, F32 hi)
++    {
++        return v < lo ? lo : (v > hi ? hi : v);
++    }
++
++    inline bool ds_cloth_finite(F32 v)
++    {
++        return std::isfinite(v);
++    }
++}
++
++LLFlexiCloth::LLFlexiCloth()
++:   mCols(0),
++    mRows(0),
++    mTube(false),
++    mAccumulator(0.f),
++    mMaxSpeed(0.f)
++{
++}
++
++void LLFlexiCloth::clear()
++{
++    mCols = 0;
++    mRows = 0;
++    mTube = false;
++    mAccumulator = 0.f;
++    mMaxSpeed = 0.f;
++    mPos.clear();
++    mPrev.clear();
++    mPinFrom.clear();
++    mConstraints.clear();
++}
++
++void LLFlexiCloth::addConstraint(S32 a, S32 b, S32 kind, const F32* rest_xyz)
++{
++    const F32 dx = rest_xyz[3 * b + 0] - rest_xyz[3 * a + 0];
++    const F32 dy = rest_xyz[3 * b + 1] - rest_xyz[3 * a + 1];
++    const F32 dz = rest_xyz[3 * b + 2] - rest_xyz[3 * a + 2];
++    Constraint c;
++    c.mA = a;
++    c.mB = b;
++    c.mRest = std::sqrt(dx * dx + dy * dy + dz * dz);
++    c.mKind = kind;
++    mConstraints.push_back(c);
++}
++
++bool LLFlexiCloth::init(S32 cols, S32 rows, bool tube, const F32* rest_xyz, const F32* start_xyz)
++{
++    clear();
++    if (!rest_xyz || !start_xyz ||
++        cols < MIN_COLS || cols > MAX_COLS || rows < MIN_ROWS || rows > MAX_ROWS)
++    {
++        return false;
++    }
++    const S32 count = cols * rows;
++    for (S32 i = 0; i < 3 * count; ++i)
++    {
++        if (!ds_cloth_finite(rest_xyz[i]) || !ds_cloth_finite(start_xyz[i]))
++        {
++            return false;
++        }
++    }
++
++    mCols = cols;
++    mRows = rows;
++    mTube = tube;
++    mPos.assign(start_xyz, start_xyz + 3 * count);
++    mPrev = mPos;
++    mPinFrom.assign(start_xyz, start_xyz + 3 * cols);
++
++    // Row by row from the held edge down, so each pass pulls from the top.
++    const S32 wrap_cols = tube ? cols : cols - 1;   // columns that have a right neighbour
++    for (S32 r = 0; r < rows; ++r)
++    {
++        for (S32 c = 0; c < cols; ++c)
++        {
++            const S32 i = r * cols + c;
++            if (c < wrap_cols)
++            {
++                addConstraint(i, r * cols + (c + 1) % cols, STRUCTURAL, rest_xyz);
++            }
++            if (r + 1 < rows)
++            {
++                addConstraint(i, i + cols, STRUCTURAL, rest_xyz);
++                if (c < wrap_cols)
++                {
++                    const S32 right = (c + 1) % cols;
++                    addConstraint(i, (r + 1) * cols + right, SHEAR, rest_xyz);
++                    addConstraint(r * cols + right, i + cols, SHEAR, rest_xyz);
++                }
++            }
++            // Bend: skip one particle across and down
++            if ((tube && cols >= 5) || (!tube && c + 2 < cols))
++            {
++                addConstraint(i, r * cols + (c + 2) % cols, BEND, rest_xyz);
++            }
++            if (r + 2 < rows)
++            {
++                addConstraint(i, i + 2 * cols, BEND, rest_xyz);
++            }
++        }
++    }
++
++    mRestDown.assign(cols * (rows - 1), 0.f);
++    for (S32 i = 0; i < cols * (rows - 1); ++i)
++    {
++        const F32 dx = rest_xyz[3 * (i + cols) + 0] - rest_xyz[3 * i + 0];
++        const F32 dy = rest_xyz[3 * (i + cols) + 1] - rest_xyz[3 * i + 1];
++        const F32 dz = rest_xyz[3 * (i + cols) + 2] - rest_xyz[3 * i + 2];
++        mRestDown[i] = std::sqrt(dx * dx + dy * dy + dz * dz);
++    }
++    return true;
++}
++
++// A few constraint passes cannot hold a long hanging cloth against strong
++// gravity, so it sags like elastic. Walk down from the held edge and pull any
++// particle that is too far from the one above it back within reach.
++void LLFlexiCloth::limitStretch()
++{
++    for (S32 i = 0; i < mCols * (mRows - 1); ++i)
++    {
++        const S32 j = i + mCols;
++        const F32 max_length = mRestDown[i] * MAX_STRETCH;
++        F32* pa = &mPos[3 * i];
++        F32* pb = &mPos[3 * j];
++        const F32 dx = pb[0] - pa[0];
++        const F32 dy = pb[1] - pa[1];
++        const F32 dz = pb[2] - pa[2];
++        const F32 length = std::sqrt(dx * dx + dy * dy + dz * dz);
++        if (length > max_length && length > MIN_LENGTH)
++        {
++            const F32 scale = max_length / length;
++            pb[0] = pa[0] + dx * scale;
++            pb[1] = pa[1] + dy * scale;
++            pb[2] = pa[2] + dz * scale;
++        }
++    }
++}
++
++void LLFlexiCloth::shift(F32 dx, F32 dy, F32 dz)
++{
++    const S32 count = (S32) mPos.size() / 3;
++    for (S32 i = 0; i < count; ++i)
++    {
++        mPos[3 * i + 0] += dx;
++        mPos[3 * i + 1] += dy;
++        mPos[3 * i + 2] += dz;
++        mPrev[3 * i + 0] += dx;
++        mPrev[3 * i + 1] += dy;
++        mPrev[3 * i + 2] += dz;
++    }
++    const S32 pins = (S32) mPinFrom.size() / 3;
++    for (S32 i = 0; i < pins; ++i)
++    {
++        mPinFrom[3 * i + 0] += dx;
++        mPinFrom[3 * i + 1] += dy;
++        mPinFrom[3 * i + 2] += dz;
++    }
++}
++
++bool LLFlexiCloth::isFinite() const
++{
++    for (F32 v : mPos)
++    {
++        if (!ds_cloth_finite(v))
++        {
++            return false;
++        }
++    }
++    return true;
++}
++
++void LLFlexiCloth::solveConstraints(const Params& params)
++{
++    const F32 bend = ds_cloth_clamp(params.mBendStiffness, 0.f, 1.f);
++    for (const Constraint& c : mConstraints)
++    {
++        F32 stiffness = 1.f;
++        if (c.mKind == SHEAR)
++        {
++            stiffness = SHEAR_STIFFNESS;
++        }
++        else if (c.mKind == BEND)
++        {
++            stiffness = bend;
++            if (stiffness <= 0.f)
++            {
++                continue;
++            }
++        }
++
++        F32* pa = &mPos[3 * c.mA];
++        F32* pb = &mPos[3 * c.mB];
++        const F32 dx = pb[0] - pa[0];
++        const F32 dy = pb[1] - pa[1];
++        const F32 dz = pb[2] - pa[2];
++        const F32 length = std::sqrt(dx * dx + dy * dy + dz * dz);
++        if (length < MIN_LENGTH)
++        {
++            continue;
++        }
++        const F32 error = (length - c.mRest) / length * stiffness;
++
++        // Row 0 is held: the other end takes the whole correction
++        const bool a_held = c.mA < mCols;
++        const bool b_held = c.mB < mCols;
++        if (a_held && b_held)
++        {
++            continue;
++        }
++        const F32 wa = a_held ? 0.f : (b_held ? 1.f : 0.5f);
++        const F32 wb = b_held ? 0.f : (a_held ? 1.f : 0.5f);
++        pa[0] += dx * error * wa;
++        pa[1] += dy * error * wa;
++        pa[2] += dz * error * wa;
++        pb[0] -= dx * error * wb;
++        pb[1] -= dy * error * wb;
++        pb[2] -= dz * error * wb;
++    }
++}
++
++void LLFlexiCloth::applyFloor(const Params& params, const F32* floor_z)
++{
++    if (!floor_z)
++    {
++        return;
++    }
++    const S32 count = mCols * mRows;
++    for (S32 i = mCols; i < count; ++i)
++    {
++        if (floor_z[i] == -FLT_MAX)
++        {
++            continue;
++        }
++        const F32 min_z = floor_z[i] + params.mFloorMargin;
++        if (mPos[3 * i + 2] < min_z)
++        {
++            mPos[3 * i + 2] = min_z;
++        }
++    }
++}
++
++void LLFlexiCloth::step(F32 seconds, const Params& params, const F32* pinned_xyz,
++                        const F32* floor_z, const F32* accel_xyz)
++{
++    if (!isInitialized() || !pinned_xyz)
++    {
++        return;
++    }
++    if (!(seconds > 0.f))
++    {
++        seconds = 0.f;
++    }
++    mAccumulator += (seconds > MAX_STEP_SECONDS) ? MAX_STEP_SECONDS : seconds;
++    S32 substeps = (S32) (mAccumulator / SUBSTEP_SECONDS);
++    if (substeps <= 0)
++    {
++        return;
++    }
++    if (substeps > MAX_SUBSTEPS)
++    {
++        substeps = MAX_SUBSTEPS;
++        mAccumulator = 0.f; // fell behind: drop the rest rather than catch up
++    }
++    else
++    {
++        mAccumulator -= (F32) substeps * SUBSTEP_SECONDS;
++    }
++
++    const F32 dt = SUBSTEP_SECONDS;
++    const F32 dt2 = dt * dt;
++    const F32 keep = std::exp(-(params.mDamping > 0.f ? params.mDamping : 0.f) * dt);
++    const F32 friction = ds_cloth_clamp(params.mFloorFriction, 0.f, 1.f);
++    const S32 iterations = params.mIterations < 1 ? 1 : (params.mIterations > 8 ? 8 : params.mIterations);
++    const S32 count = mCols * mRows;
++
++    for (S32 sub = 0; sub < substeps; ++sub)
++    {
++        // Held row: slide from where it was to the new targets
++        const F32 t = (F32) (sub + 1) / (F32) substeps;
++        for (S32 c = 0; c < mCols; ++c)
++        {
++            for (S32 k = 0; k < 3; ++k)
++            {
++                const F32 target = mPinFrom[3 * c + k] + (pinned_xyz[3 * c + k] - mPinFrom[3 * c + k]) * t;
++                mPrev[3 * c + k] = mPos[3 * c + k];
++                mPos[3 * c + k] = target;
++            }
++        }
++
++        // Integrate the free particles
++        for (S32 i = mCols; i < count; ++i)
++        {
++            F32* p = &mPos[3 * i];
++            F32* q = &mPrev[3 * i];
++            F32 v[3];
++            F32 move2 = 0.f;
++            for (S32 k = 0; k < 3; ++k)
++            {
++                v[k] = (p[k] - q[k]) * keep;
++                move2 += v[k] * v[k];
++            }
++            if (move2 > MAX_MOVE_PER_SUBSTEP * MAX_MOVE_PER_SUBSTEP)
++            {
++                const F32 scale = MAX_MOVE_PER_SUBSTEP / std::sqrt(move2);
++                v[0] *= scale;
++                v[1] *= scale;
++                v[2] *= scale;
++            }
++            F32 a[3] = { params.mAccel[0], params.mAccel[1], params.mAccel[2] - params.mGravity };
++            if (accel_xyz)
++            {
++                a[0] += accel_xyz[3 * i + 0];
++                a[1] += accel_xyz[3 * i + 1];
++                a[2] += accel_xyz[3 * i + 2];
++            }
++            for (S32 k = 0; k < 3; ++k)
++            {
++                q[k] = p[k];
++                p[k] += v[k] + a[k] * dt2;
++            }
++        }
++
++        for (S32 it = 0; it < iterations; ++it)
++        {
++            solveConstraints(params);
++            applyFloor(params, floor_z);
++        }
++
++        // Shape keeping: drift toward the prim's own (flexi) shape, so a
++        // flared skirt keeps its size instead of draping into a narrow bunch
++        const F32 shape = ds_cloth_clamp(params.mShapeStiffness, 0.f, 1.f);
++        if (shape > 0.f && params.mShapeTargets)
++        {
++            for (S32 i = 3 * mCols; i < 3 * count; ++i)
++            {
++                if (ds_cloth_finite(params.mShapeTargets[i]))
++                {
++                    mPos[i] += (params.mShapeTargets[i] - mPos[i]) * shape;
++                }
++            }
++        }
++        limitStretch();
++        applyFloor(params, floor_z);
++
++        // Floor friction: particles resting on the floor lose sideways speed
++        // and all downward speed, so they settle instead of bouncing.
++        if (floor_z)
++        {
++            for (S32 i = mCols; i < count; ++i)
++            {
++                if (floor_z[i] == -FLT_MAX)
++                {
++                    continue;
++                }
++                const F32 contact_z = floor_z[i] + params.mFloorMargin + 1.e-4f;
++                if (mPos[3 * i + 2] <= contact_z)
++                {
++                    mPrev[3 * i + 0] += (mPos[3 * i + 0] - mPrev[3 * i + 0]) * friction;
++                    mPrev[3 * i + 1] += (mPos[3 * i + 1] - mPrev[3 * i + 1]) * friction;
++                    if (mPrev[3 * i + 2] > mPos[3 * i + 2])
++                    {
++                        mPrev[3 * i + 2] = mPos[3 * i + 2];
++                    }
++                }
++            }
++        }
++
++        F32 max_move2 = 0.f;
++        for (S32 i = mCols; i < count; ++i)
++        {
++            const F32 dx = mPos[3 * i + 0] - mPrev[3 * i + 0];
++            const F32 dy = mPos[3 * i + 1] - mPrev[3 * i + 1];
++            const F32 dz = mPos[3 * i + 2] - mPrev[3 * i + 2];
++            const F32 move2 = dx * dx + dy * dy + dz * dz;
++            max_move2 = move2 > max_move2 ? move2 : max_move2;
++        }
++        mMaxSpeed = std::sqrt(max_move2) / dt;
++    }
++
++    mPinFrom.assign(pinned_xyz, pinned_xyz + 3 * mCols);
++}
++// </FS:Outworldz>
+diff --git a/indra/newview/llflexicloth.h b/indra/newview/llflexicloth.h
+new file mode 100644
+index 0000000000..873b44d513
+--- /dev/null
++++ b/indra/newview/llflexicloth.h
+@@ -0,0 +1,131 @@
++/**
++ * @file llflexicloth.h
++ * @brief FlexiFix: a small Verlet cloth solver for flexible prims
++ *
++ * $LicenseInfo:firstyear=2026&license=viewerlgpl$
++ * DreamStorm Viewer Source Code (Outworldz)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * $/LicenseInfo$
++ */
++
++// <FS:Outworldz> FlexiFix cloth (whole file)
++//
++// A grid of particles, cols x rows, stored row by row as x,y,z floats.
++// Row 0 is the edge held by the prim's base; it follows the pinned targets
++// given to step(). A "tube" grid wraps around (column cols-1 joins column 0),
++// for round prims such as skirts; otherwise it is an open sheet (capes, trains).
++//
++// Verlet integration with fixed 1/60 s substeps, velocity damping, and
++// structural, shear and bend distance constraints solved a few times per
++// substep. Positions are corrected, never forced, so the solver stays stable
++// and comes to rest. Depends only on stdtypes.h and the standard library, so
++// it can be unit tested outside the viewer.
++
++#ifndef LL_LLFLEXICLOTH_H
++#define LL_LLFLEXICLOTH_H
++
++#include "stdtypes.h"
++
++#include <vector>
++
++class LLFlexiCloth
++{
++public:
++    static constexpr S32 MIN_COLS = 4;
++    static constexpr S32 MAX_COLS = 16;
++    static constexpr S32 MIN_ROWS = 2;
++    static constexpr S32 MAX_ROWS = 33;
++
++    struct Params
++    {
++        F32 mGravity = 9.8f;            // m/s^2, pulls toward -Z
++        F32 mAccel[3] = { 0.f, 0.f, 0.f }; // extra acceleration for every particle, m/s^2
++        F32 mDamping = 2.f;             // velocity loss per second, >= 0
++        F32 mBendStiffness = 0.1f;      // 0..1, how much the cloth resists folding
++        F32 mFloorMargin = 0.f;         // gap kept above floor_z, meters
++        F32 mFloorFriction = 1.f;       // 0..1, 1 = no sliding on the floor
++        S32 mIterations = 4;            // constraint passes per substep, 1..8
++        // Shape keeping: each substep, free particles move this fraction of the
++        // way toward mShapeTargets (cols * rows points, same frame as the
++        // particles; row 0 ignored). 0 or no targets = free cloth.
++        F32 mShapeStiffness = 0.f;
++        const F32* mShapeTargets = nullptr;
++    };
++
++    LLFlexiCloth();
++
++    // Build the grid. rest_xyz gives the shape the constraint lengths come
++    // from (any frame), start_xyz the first positions (agent space). Both hold
++    // cols * rows points. Returns false (and stays empty) on bad input.
++    bool init(S32 cols, S32 rows, bool tube, const F32* rest_xyz, const F32* start_xyz);
++    void clear();
++
++    bool isInitialized() const      { return mCols > 0; }
++    S32 getCols() const             { return mCols; }
++    S32 getRows() const             { return mRows; }
++    bool isTube() const             { return mTube; }
++    const F32* getPositions() const { return mPos.empty() ? nullptr : &mPos[0]; }
++
++    // Advance by seconds, in fixed substeps (leftover time carries over).
++    // pinned_xyz: cols targets for row 0, reached smoothly over the substeps.
++    // floor_z: one floor height per particle, or nullptr for no floor.
++    // accel_xyz: one extra acceleration per particle (wind), or nullptr.
++    void step(F32 seconds, const Params& params, const F32* pinned_xyz,
++              const F32* floor_z, const F32* accel_xyz);
++
++    // Move everything (agent region crossing / origin shift).
++    void shift(F32 dx, F32 dy, F32 dz);
++
++    // Fastest particle speed in the last substep, m/s.
++    F32 getMaxSpeed() const         { return mMaxSpeed; }
++
++    // False if any position became NaN or infinite.
++    bool isFinite() const;
++
++private:
++    enum EKind
++    {
++        STRUCTURAL = 0,
++        SHEAR = 1,
++        BEND = 2
++    };
++    struct Constraint
++    {
++        S32 mA;
++        S32 mB;
++        F32 mRest;
++        S32 mKind;
++    };
++
++    void addConstraint(S32 a, S32 b, S32 kind, const F32* rest_xyz);
++    void solveConstraints(const Params& params);
++    void applyFloor(const Params& params, const F32* floor_z);
++    void limitStretch();
++
++    S32 mCols;
++    S32 mRows;
++    bool mTube;
++    F32 mAccumulator;
++    F32 mMaxSpeed;
++    std::vector<F32> mPos;
++    std::vector<F32> mPrev;
++    std::vector<F32> mPinFrom;   // row 0 targets at the start of this step
++    std::vector<Constraint> mConstraints;
++    std::vector<F32> mRestDown;  // rest distance from each particle to the one below it
++};
++// </FS:Outworldz>
++
++#endif // LL_LLFLEXICLOTH_H
