@@ -540,7 +540,7 @@ bool LLVolumeImplFlexible::updateCloth(F32 seconds, const LLVector3& frame_pos, 
     {
         // Round prims keep the flexi's own shape (size, taper, flare, the way
         // it points), with cloth sway on top; 0 = drape like loose cloth
-        static LLCachedControl<F32> cloth_shape(gSavedSettings, "DSFlexiClothShape", 0.5f);
+        static LLCachedControl<F32> cloth_shape(gSavedSettings, "DSFlexiClothShape", 0.05f);
         const F32 shape = llclamp((F32) cloth_shape, 0.f, 1.f);
         if (shape > 0.f)
         {
