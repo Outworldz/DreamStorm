@@ -134,7 +134,16 @@ Follow the [Windows build instructions](doc/building_windows.md). Outworldz buil
 - `mt.exe` from Windows SDK 10.0.28000 cannot find `midlrtmd.dll` (link error LNK1327); put the 10.0.26100 SDK `bin\x64` folder on PATH.
 - Configure: `autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON`
 - Build: `autobuild build -A 64 -c ReleaseFS_open --no-configure`
-- The installer (`*Setup.exe` in `build-vc*-64/newview/Release`) needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set.
+- The installer (`*Setup.exe` in `build-vc*-64/newview/Release`) needs [NSIS](https://nsis.sourceforge.io). Signing runs only when `SIGNTOOL_PATH` is set, or when `DIGICERT_THUMBPRINT` (and `DIGICERTUTIL_PATH`) is set to sign with DigiCertUtil.
+
+#### Outworldz builds: `perl Jenkins.pl`
+
+`Jenkins.pl` at the top of the tree does the whole Windows build the Outworldz way (paths and the certificate thumbprint are at the top of the script). It asks **Beta** or **Release**, or takes `--beta` / `--release`:
+
+- **Beta** builds, signs with the DigiCert USB token, copies the installer to `Outworldz_Installer/DreamStorm/Beta/` on the web server and prints its link. It does not commit, tag or push.
+- **Release** needs a clean tree on `Water`. It builds and signs, pushes `Water`, tags `dreamstorm-<version>`, makes the GitHub release with the installer, and starts `water-build.yml`, which adds the `.dmg` and `.tar.xz` to that release. When that is done it writes `DreamStorm/download_links.txt` (the download table, with links to the GitHub release), which `DreamStorm/Default.htm` includes with Apache SSI, and commits those two files to the web server's local git (nothing else staged there is committed). Once the live page shows the new links, it deletes the old `.exe` in `Grid/DreamStorm`.
+- `--publish <tag>` redoes only the web page step, for example after re-running a failed Mac/Linux build. `--dry-run` prints what would be done and changes nothing.
+- Run `gh auth login` once before the first Release.
 
 #### Linux
 

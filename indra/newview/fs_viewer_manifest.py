@@ -79,7 +79,40 @@ class FSViewerManifest:
     def fs_channel_unique(self):
         return self.channel().replace("Firestorm", "").strip()
 
+    # <FS:Outworldz> Sign with DigiCertUtil and the Outworldz hardware token when
+    # DIGICERT_THUMBPRINT is set (Jenkins.pl sets it). A file that does not sign
+    # stops the build, so an unsigned installer is never made by mistake.
+    def fs_digicert_sign(self, paths):
+        thumbprint = os.getenv('DIGICERT_THUMBPRINT')
+        if not thumbprint:
+            return False
+        tool = os.getenv('DIGICERTUTIL_PATH') or 'digicertutil.exe'
+        for path in paths:
+            path = os.path.abspath(path)
+            if not os.path.isfile(path):
+                print(f"Not signed, file is missing: {path}")
+                continue
+            print(f"Signing {path}")
+            result = subprocess.run([tool, "sign", "/noInput", "/sha1", thumbprint, path],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if result.stdout:
+                print(result.stdout.strip())
+            if result.returncode != 0:
+                raise RuntimeError(f"DigiCertUtil could not sign {path} (exit code {result.returncode}). "
+                                   "Is the USB token plugged in?")
+        return True
+    # </FS:Outworldz>
+
     def fs_sign_win_binaries(self):
+        # <FS:Outworldz>
+        if self.fs_digicert_sign([
+                self.args['configuration'] + "\\slplugin.exe",
+                self.args['configuration'] + "\\llwebrtc.dll",
+                self.args['configuration'] + "\\llplugin\\dullahan_host.exe",
+                self.args['configuration'] + "\\" + self.final_exe()]
+                + ([self.args['configuration'] + "\\SLVoice.exe"] if self.fs_is_opensim() else [])):
+            return
+        # </FS:Outworldz>
         signtool_path = os.getenv('SIGNTOOL_PATH')
         codesigning_dlib_path = os.getenv('CODESIGNING_DLIB_PATH')
         metadata_file = os.getenv("CODESIGNING_METADATA_PATH")
@@ -116,6 +149,10 @@ class FSViewerManifest:
         metadata_file = os.getenv("CODESIGNING_METADATA_PATH")
         installer_path = self.args['configuration'] + "\\" + substitution_strings['installer_file']
 
+        # <FS:Outworldz>
+        if self.fs_digicert_sign([installer_path]):
+            return
+        # </FS:Outworldz>
         if not signtool_path or not codesigning_dlib_path:
             print("Signing configuration is missing. Skipping signing process.")
             return
