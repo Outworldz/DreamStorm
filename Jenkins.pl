@@ -40,7 +40,7 @@ my $DigiCert    = 'H:/Opensim/Certs/digicertutil.exe';
 my $VcVars      = 'C:/Program Files/Microsoft Visual Studio/18/Community/VC/Auxiliary/Build/vcvars64.bat';
 my $SdkBin      = 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64';    # mt.exe that works (LNK1327)
 my $SignTool    = "$SdkBin/signtool.exe";
-my $GitBin      = 'C:/Program Files/Git/bin';    # bash.exe for configure_firestorm.sh
+my $CygBin      = 'C:/cygwin64/bin';    # bash for configure_firestorm.sh, as doc/building_windows.md says
 my $VsCMake     = 'C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin';
 my $Venv        = 'H:/Opensim/DreamStorm-venv';
 my $BuildVars   = 'H:/Opensim/fs-build-variables/variables';
@@ -152,7 +152,7 @@ Fail("You are on branch '$branch'. Switch to $Branch first.") if $branch ne $Bra
 
 for ( [ $DigiCert, 'DigiCertUtil' ], [ $VcVars, 'Visual Studio 2026 vcvars64.bat' ], [ $SignTool, 'signtool' ],
     [ "$Venv/Scripts/autobuild.exe", 'autobuild (venv)' ], [ $BuildVars, 'fs-build-variables' ],
-    [ "$GitBin/bash.exe", 'Git bash' ], [ "$VsCMake/cmake.exe", 'Visual Studio CMake' ] )
+    [ "$CygBin/bash.exe", 'Cygwin bash' ], [ "$VsCMake/cmake.exe", 'Visual Studio CMake' ] )
 {
     Fail("$_->[1] not found: $_->[0]") unless -e $_->[0];
 }
@@ -194,9 +194,15 @@ set AUTOBUILD_VSVER=180
 set CMAKE_POLICY_VERSION_MINIMUM=3.5
 set AUTOBUILD_VARIABLES_FILE=$vars
 set VIRTUAL_ENV=@{[Win($Venv)]}
-rem Git's bash first: vcvars puts System32 early, and its bash.exe is WSL, not Git bash
 rem VS 18's CMake 4 first: Strawberry Perl's C:\\Strawberry\\c\\bin has a CMake 3.29 with no VS 2026 generator
-set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win($GitBin)]};@{[Win("$Venv/Scripts")]};%PATH%
+set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win("$Venv/Scripts")]};%PATH%
+rem Cygwin goes AFTER the Visual Studio folders, so Microsoft's link.exe wins over GNU link (Git's bash put
+rem /usr/bin first and MSBuild ran GNU link), and BEFORE System32, whose bash.exe is WSL.
+set "PATH=%PATH:C:\\Windows\\System32;=@{[Win($CygBin)]};C:\\Windows\\System32;%"
+for /f "delims=" %%b in ('where bash') do (echo bash: %%b & goto :gotbash)
+:gotbash
+for /f "delims=" %%l in ('where link') do (echo link: %%l & goto :gotlink)
+:gotlink
 set DIGICERTUTIL_PATH=@{[Win($DigiCert)]}
 set DIGICERT_THUMBPRINT=$Thumbprint
 rem the build number is the git commit count; without it autobuild uses the date and time.
