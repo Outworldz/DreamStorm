@@ -41,6 +41,7 @@ my $VcVars      = 'C:/Program Files/Microsoft Visual Studio/18/Community/VC/Auxi
 my $SdkBin      = 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64';    # mt.exe that works (LNK1327)
 my $SignTool    = "$SdkBin/signtool.exe";
 my $GitBin      = 'C:/Program Files/Git/bin';    # bash.exe for configure_firestorm.sh
+my $VsCMake     = 'C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin';
 my $Venv        = 'H:/Opensim/DreamStorm-venv';
 my $BuildVars   = 'H:/Opensim/fs-build-variables/variables';
 my $BuildDir    = 'build-vc180-64';
@@ -151,7 +152,7 @@ Fail("You are on branch '$branch'. Switch to $Branch first.") if $branch ne $Bra
 
 for ( [ $DigiCert, 'DigiCertUtil' ], [ $VcVars, 'Visual Studio 2026 vcvars64.bat' ], [ $SignTool, 'signtool' ],
     [ "$Venv/Scripts/autobuild.exe", 'autobuild (venv)' ], [ $BuildVars, 'fs-build-variables' ],
-    [ "$GitBin/bash.exe", 'Git bash' ] )
+    [ "$GitBin/bash.exe", 'Git bash' ], [ "$VsCMake/cmake.exe", 'Visual Studio CMake' ] )
 {
     Fail("$_->[1] not found: $_->[0]") unless -e $_->[0];
 }
@@ -194,7 +195,8 @@ set CMAKE_POLICY_VERSION_MINIMUM=3.5
 set AUTOBUILD_VARIABLES_FILE=$vars
 set VIRTUAL_ENV=@{[Win($Venv)]}
 rem Git's bash first: vcvars puts System32 early, and its bash.exe is WSL, not Git bash
-set PATH=@{[Win($SdkBin)]};@{[Win($GitBin)]};@{[Win("$Venv/Scripts")]};%PATH%
+rem VS 18's CMake 4 first: Strawberry Perl's C:\\Strawberry\\c\\bin has a CMake 3.29 with no VS 2026 generator
+set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win($GitBin)]};@{[Win("$Venv/Scripts")]};%PATH%
 set DIGICERTUTIL_PATH=@{[Win($DigiCert)]}
 set DIGICERT_THUMBPRINT=$Thumbprint
 rem the build number is the git commit count; without these autobuild uses the date and time
