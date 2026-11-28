@@ -37,3 +37,8 @@ FILES_ARE_UNICODE_UTF-16LE.txt text eol=crlf
 
 # Windows Installer Script files (normalization disabled)
 *.nsi -text
+
+# Cygwin installer and its package cache (dependencies/setup.bat installs it to C:\cygwin64).
+# Plain git, not LFS: GitHub refuses LFS uploads to a public fork. Binary, so eol=lf can't damage them.
+dependencies/** binary
+dependencies/setup.bat text eol=crlf
