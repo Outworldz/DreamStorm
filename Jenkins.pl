@@ -199,8 +199,9 @@ rem VS 18's CMake 4 first: Strawberry Perl's C:\\Strawberry\\c\\bin has a CMake 
 set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win($GitBin)]};@{[Win("$Venv/Scripts")]};%PATH%
 set DIGICERTUTIL_PATH=@{[Win($DigiCert)]}
 set DIGICERT_THUMBPRINT=$Thumbprint
-rem the build number is the git commit count; without these autobuild uses the date and time
-set revision=$Count
+rem the build number is the git commit count; without it autobuild uses the date and time.
+rem Not "revision": with a REVISION also set, MSBuild fails (MSB6001, the same key twice).
+set revision=
 set AUTOBUILD_BUILD_ID=$Count
 autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON || exit /b 1
 autobuild build -A 64 -c ReleaseFS_open --no-configure || exit /b 1
