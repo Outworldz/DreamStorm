@@ -36,14 +36,13 @@ my $Branch      = 'Water';
 my $Workflow    = 'water-build.yml';
 my $TagPrefix   = 'dreamstorm-';
 my $Thumbprint  = '950056772699712AEE2C29A39BE1FF4A9E980F3E';    # Outworldz code signing cert, 2026
-my $DigiCert    = 'H:/Opensim/Certs/digicertutil.exe';
+my $DigiCert    = '../Certs/digicertutil.exe';    # relative to this repo
 my $VcVars      = 'C:/Program Files/Microsoft Visual Studio/18/Community/VC/Auxiliary/Build/vcvars64.bat';
 my $SdkBin      = 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64';    # mt.exe that works (LNK1327)
 my $SignTool    = "$SdkBin/signtool.exe";
 my $CygBin      = 'C:/cygwin64/bin';    # bash for configure_firestorm.sh, as doc/building_windows.md says
 my $VsCMake     = 'C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin';
-my $Venv        = 'H:/Opensim/DreamStorm-venv';
-my $BuildVars   = 'H:/Opensim/fs-build-variables/variables';
+my $BuildVars   = '../fs-build-variables/variables';        # relative to this repo
 my $BuildDir    = 'build-vc180-64';
 my $WebRoot     = '//Mach-iii/o/Inetpub/Secondlife/Outworldz_Installer';
 my $WebUrl      = 'https://www.outworldz.com/Outworldz_Installer';
@@ -150,8 +149,14 @@ my $branch = Read('git rev-parse --abbrev-ref HEAD');
 chomp $branch;
 Fail("You are on branch '$branch'. Switch to $Branch first.") if $branch ne $Branch;
 
+# autobuild comes from the normal Python ("pip install --user autobuild"), not a virtual environment.
+# Ask Python where pip put autobuild.exe, so this works on any PC.
+my ($PyScripts) = Read( q{python -c "import sysconfig, os; print(sysconfig.get_path('scripts', os.name + '_user'))"}, 1 );
+$PyScripts =~ s/\s+$//;
+$PyScripts =~ s{\\}{/}g;
+
 for ( [ $DigiCert, 'DigiCertUtil' ], [ $VcVars, 'Visual Studio 2026 vcvars64.bat' ], [ $SignTool, 'signtool' ],
-    [ "$Venv/Scripts/autobuild.exe", 'autobuild (venv)' ], [ $BuildVars, 'fs-build-variables' ],
+    [ "$PyScripts/autobuild.exe", 'autobuild (pip install --user autobuild)' ], [ $BuildVars, 'fs-build-variables' ],
     [ "$CygBin/bash.exe", 'Cygwin bash' ], [ "$VsCMake/cmake.exe", 'Visual Studio CMake' ] )
 {
     Fail("$_->[1] not found: $_->[0]") unless -e $_->[0];
@@ -205,9 +210,8 @@ cd /d "@{[Win($Top)]}"
 set AUTOBUILD_VSVER=180
 set CMAKE_POLICY_VERSION_MINIMUM=3.5
 set AUTOBUILD_VARIABLES_FILE=$vars
-set VIRTUAL_ENV=@{[Win($Venv)]}
 rem VS 18's CMake 4 first: Strawberry Perl's C:\\Strawberry\\c\\bin has a CMake 3.29 with no VS 2026 generator
-set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win("$Venv/Scripts")]};%PATH%
+set PATH=@{[Win($VsCMake)]};@{[Win($SdkBin)]};@{[Win($PyScripts)]};%PATH%
 rem Cygwin goes AFTER the Visual Studio folders, so Microsoft's link.exe wins over GNU link (Git's bash put
 rem /usr/bin first and MSBuild ran GNU link), and BEFORE System32, whose bash.exe is WSL.
 set "PATH=%PATH:C:\\Windows\\System32;=@{[Win($CygBin)]};C:\\Windows\\System32;%"
