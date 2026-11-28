@@ -40,6 +40,7 @@ my $DigiCert    = 'H:/Opensim/Certs/digicertutil.exe';
 my $VcVars      = 'C:/Program Files/Microsoft Visual Studio/18/Community/VC/Auxiliary/Build/vcvars64.bat';
 my $SdkBin      = 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64';    # mt.exe that works (LNK1327)
 my $SignTool    = "$SdkBin/signtool.exe";
+my $GitBin      = 'C:/Program Files/Git/bin';    # bash.exe for configure_firestorm.sh
 my $Venv        = 'H:/Opensim/DreamStorm-venv';
 my $BuildVars   = 'H:/Opensim/fs-build-variables/variables';
 my $BuildDir    = 'build-vc180-64';
@@ -149,7 +150,8 @@ chomp $branch;
 Fail("You are on branch '$branch'. Switch to $Branch first.") if $branch ne $Branch;
 
 for ( [ $DigiCert, 'DigiCertUtil' ], [ $VcVars, 'Visual Studio 2026 vcvars64.bat' ], [ $SignTool, 'signtool' ],
-    [ "$Venv/Scripts/autobuild.exe", 'autobuild (venv)' ], [ $BuildVars, 'fs-build-variables' ] )
+    [ "$Venv/Scripts/autobuild.exe", 'autobuild (venv)' ], [ $BuildVars, 'fs-build-variables' ],
+    [ "$GitBin/bash.exe", 'Git bash' ] )
 {
     Fail("$_->[1] not found: $_->[0]") unless -e $_->[0];
 }
@@ -191,11 +193,13 @@ set AUTOBUILD_VSVER=180
 set CMAKE_POLICY_VERSION_MINIMUM=3.5
 set AUTOBUILD_VARIABLES_FILE=$vars
 set VIRTUAL_ENV=@{[Win($Venv)]}
-set PATH=@{[Win($SdkBin)]};@{[Win("$Venv/Scripts")]};%PATH%
+rem Git's bash first: vcvars puts System32 early, and its bash.exe is WSL, not Git bash
+set PATH=@{[Win($SdkBin)]};@{[Win($GitBin)]};@{[Win("$Venv/Scripts")]};%PATH%
 set DIGICERTUTIL_PATH=@{[Win($DigiCert)]}
 set DIGICERT_THUMBPRINT=$Thumbprint
-set revision=
-set AUTOBUILD_BUILD_ID=
+rem the build number is the git commit count; without these autobuild uses the date and time
+set revision=$Count
+set AUTOBUILD_BUILD_ID=$Count
 autobuild configure -A 64 -c ReleaseFS_open -- --chan DreamStorm -DLL_TESTS:BOOL=FALSE -DPACKAGE:BOOL=ON || exit /b 1
 autobuild build -A 64 -c ReleaseFS_open --no-configure || exit /b 1
 BAT
