@@ -66,6 +66,10 @@ GetOptions(
 my $Top = dirname( abs_path($0) );
 chdir $Top or die "Cannot go to $Top: $!\n";
 
+# The build runs autobuild from inside $BuildDir, where '../' means this repo, not its parent.
+# So hand the build full paths, not ones relative to this repo.
+$_ = File::Spec->rel2abs( $_, $Top ) for $DigiCert, $BuildVars;
+
 make_path("$Top/$BuildDir/logs");
 my $LogFile = "$Top/$BuildDir/logs/jenkins-" . strftime( '%Y-%m-%d_%H-%M-%S', localtime ) . '.log';
 open( my $LOG, '>', $LogFile ) or die "Cannot write $LogFile: $!\n";
