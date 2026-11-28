@@ -178,7 +178,19 @@ Fail("Tag $Tag is already here. Make a new commit for a new $Mode.") if $tags =~
 my ( undef, $relcode ) = Read( "gh release view $Tag --repo $Repo --json tagName", 1 );
 Fail("GitHub already has release $Tag.") if $relcode == 0;
 
-Say("Plug in the DigiCert USB token now: every program file and the installer are signed.");
+# DigiCertUtil finds the certificate in the Windows store (CurrentUser\My), where SafeNet Authentication
+# Client puts it from the eToken. Check now, not after a 15-minute build.
+my ($certOut) = Read( qq{powershell -NoProfile -Command "if (Test-Path Cert:/CurrentUser/My/$Thumbprint) { 'found' } else { 'missing' }"}, 1 );
+if ( $certOut !~ /found/ ) {
+    my $msg = "The signing certificate $Thumbprint is not in your Windows certificate store.\n"
+      . "  Plug in the SafeNet eToken, start SafeNet Authentication Client, and check that the Outworldz\n"
+      . "  certificate (valid to 2027) shows under Personal in certmgr.msc. Then run this again.";
+    if ($dry) { Say("WARNING: $msg") }
+    else      { Fail($msg) }
+}
+else { Say("Signing certificate $Thumbprint found.") }
+
+Say("Keep the DigiCert USB token plugged in: every program file and the installer are signed.");
 Ask('Press Enter to start the build.') unless $dry;
 
 # ---------------------------------------------------------------- build

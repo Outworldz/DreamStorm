@@ -97,9 +97,11 @@ class FSViewerManifest:
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             if result.stdout:
                 print(result.stdout.strip())
-            if result.returncode != 0:
+            # DigiCertUtil can print an error and still exit 0 (e.g. "no code signing certificates
+            # with a SHA1 thumbprint of ... could be found"), so check what it says as well.
+            if result.returncode != 0 or 'error' in (result.stdout or '').lower():
                 raise RuntimeError(f"DigiCertUtil could not sign {path} (exit code {result.returncode}). "
-                                   "Is the USB token plugged in?")
+                                   "Is the USB token plugged in and its certificate in the Windows store?")
         return True
     # </FS:Outworldz>
 
