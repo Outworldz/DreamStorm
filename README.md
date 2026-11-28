@@ -140,8 +140,10 @@ Follow the [Windows build instructions](doc/building_windows.md). Outworldz buil
 
 `Jenkins.pl` at the top of the tree does the whole Windows build the Outworldz way (paths and the certificate thumbprint are at the top of the script). It asks **Beta** or **Release**, or takes `--beta` / `--release`:
 
-- **Beta** builds, signs with the DigiCert USB token, copies the installer to `Outworldz_Installer/DreamStorm/Beta/` on the web server and prints its link. It does not commit, tag or push.
-- **Release** needs a clean tree on `Water`. It builds and signs, pushes `Water`, tags `dreamstorm-<version>`, makes the GitHub release with the installer, and starts `water-build.yml`, which adds the `.dmg` and `.tar.xz` to that release. When that is done it writes `DreamStorm/download_links.txt` (the download table, with links to the GitHub release), which `DreamStorm/Default.htm` includes with Apache SSI, and commits those two files to the web server's local git (nothing else staged there is committed). Once the live page shows the new links, it deletes the old `.exe` in `Grid/DreamStorm`.
+Both need a clean tree on `Water`, because the build number must match the commit that is tagged.
+
+- **Beta** builds, signs with the DigiCert USB token, copies the installer to `Outworldz_Installer/DreamStorm/Beta/` on the web server and prints its link. It pushes `Water`, tags `dreamstorm-<version>-beta` and makes a GitHub **pre-release** with the installer, then starts `water-build.yml` for the Mac and Linux files without waiting for it. The download page is not changed.
+- **Release** builds and signs, pushes `Water`, tags `dreamstorm-<version>`, makes a normal GitHub release (marked Latest) with the installer, and starts `water-build.yml`, which adds the `.dmg` and `.tar.xz` to that release. When that is done it writes `DreamStorm/download_links.txt` (the download table, with links to the GitHub release), which `DreamStorm/Default.htm` includes with Apache SSI, and commits those two files to the web server's local git (nothing else staged there is committed). Once the live page shows the new links, it deletes the old `.exe` in `Grid/DreamStorm`.
 - `--publish <tag>` redoes only the web page step, for example after re-running a failed Mac/Linux build. `--dry-run` prints what would be done and changes nothing.
 - Run `gh auth login` once before the first Release.
 

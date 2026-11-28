@@ -2,13 +2,15 @@
 # <FS:Outworldz> Jenkins.pl - build DreamStorm for Windows as a Beta or a Release.
 #
 #   perl Jenkins.pl                 asks Beta or Release
-#   perl Jenkins.pl --beta          build, sign, copy to the Beta web folder, print its link. No git.
-#   perl Jenkins.pl --release       build, sign, push, tag, GitHub release with the .exe, start the
-#                                   Mac/Linux GitHub action, wait for it, then update the web page
+#   perl Jenkins.pl --beta          build, sign, copy to the Beta web folder, push, tag <ver>-beta,
+#                                   GitHub pre-release with the .exe, start the Mac/Linux action.
+#                                   The download page is not changed.
+#   perl Jenkins.pl --release       build, sign, push, tag, GitHub release (Latest) with the .exe, start
+#                                   the Mac/Linux GitHub action, wait for it, then update the web page
 #   perl Jenkins.pl --publish TAG   only the web step, for a release that is already on GitHub
 #   add --dry-run to print what would be done and change nothing
 #
-# Release needs a clean working tree on branch Water, the DigiCert USB token, and gh logged in
+# Both need a clean working tree on branch Water, the DigiCert USB token, and gh logged in
 # (run "gh auth login" once).
 #
 # The web page DreamStorm/Default.htm takes its download table from DreamStorm/download_links.txt
@@ -161,21 +163,17 @@ my $Base = <$VF>;
 close $VF;
 $Base =~ s/\s+//g;
 my $Version = "$Base.$Count";
-my $Tag     = "$TagPrefix$Version";
-Say( "Commit $Sha, version $Version", $release ? ", tag $Tag" : '' );
+my $Tag     = $TagPrefix . $Version . ( $beta ? '-beta' : '' );
+Say("Commit $Sha, version $Version, tag $Tag");
 
+# Both kinds go on GitHub (Beta as a pre-release), so both need the exact commit they were built from.
 my $dirty = Read('git status --porcelain --untracked-files=no');
-if ($release) {
-    Fail("The working tree has changes. Commit them first, so the build number matches the commit:\n$dirty") if $dirty =~ /\S/;
-    CheckGh();
-    my ($tags) = Read("git tag -l $Tag");
-    Fail("Tag $Tag is already here. Make a new commit for a new release.") if $tags =~ /\S/;
-    my ( undef, $code ) = Read( "gh release view $Tag --repo $Repo --json tagName", 1 );
-    Fail("GitHub already has release $Tag.") if $code == 0;
-}
-elsif ( $dirty =~ /\S/ ) {
-    Say("Note: uncommitted changes are in this Beta build.");
-}
+Fail("The working tree has changes. Commit them first, so the build number matches the commit:\n$dirty") if $dirty =~ /\S/;
+CheckGh();
+my ($tags) = Read("git tag -l $Tag");
+Fail("Tag $Tag is already here. Make a new commit for a new $Mode.") if $tags =~ /\S/;
+my ( undef, $relcode ) = Read( "gh release view $Tag --repo $Repo --json tagName", 1 );
+Fail("GitHub already has release $Tag.") if $relcode == 0;
 
 Say("Plug in the DigiCert USB token now: every program file and the installer are signed.");
 Ask('Press Enter to start the build.') unless $dry;
@@ -217,7 +215,7 @@ unless ($dry) {
         $Ver =~ s/\s+//g;
     }
     Fail("Built version $Ver is not $Version (from git). Is 'revision' or AUTOBUILD_BUILD_ID set?")
-      if $release && $Ver ne $Version;
+      if $Ver ne $Version;
     Say("Installer: $Exe");
 
     # signature check
@@ -226,8 +224,7 @@ unless ($dry) {
         my ( $out, $code ) = Read( '"' . Win($SignTool) . '" verify /pa "' . Win($f) . '"', 1 );
         if ($code) {
             Say($out);
-            Fail("$f is not signed.") if $release;
-            Say("WARNING: $f is not signed.");
+            Fail("$f is not signed.");
         }
         else { Say( 'Signed OK: ', basename($f) ) }
     }
@@ -248,35 +245,47 @@ if ($beta) {
         copy( $Exe, "$BetaDir/$name" ) or Fail("Copy to $BetaDir failed: $!");
         Fail("The copy in $BetaDir is not the same size.") if -s $Exe != -s "$BetaDir/$name";
     }
-    Say("\nBeta $Ver is ready. Install it from:\n  $WebUrl/DreamStorm/Beta/$name");
-    Done();
 }
 
-# ---------------------------------------------------------------- Release
+# ---------------------------------------------------------------- GitHub (both)
 RunOrFail("git push origin $Branch");
-RunOrFail("git tag -a $Tag -m \"DreamStorm $Ver\" $Sha");
+RunOrFail("git tag -a $Tag -m \"DreamStorm $Ver $Mode\" $Sha");
 RunOrFail("git push origin $Tag");
 
-# release notes: commits since the last DreamStorm tag
+# release notes: commits since the last Release (for a Beta, since the last Release or Beta)
 my $prev = '';
 for ( split /\n/, Read("git tag -l $TagPrefix* --sort=-creatordate") ) {
     next if $_ eq $Tag;
+    next if $release && /-beta$/;
     $prev = $_;
     last;
 }
 my $log = $prev ? Read("git log --oneline --no-merges $prev..$Sha") : '';
 my $notesFile = "$Top/$BuildDir/logs/jenkins-notes.md";
 open( my $N, '>', $notesFile ) or Fail("Cannot write $notesFile: $!");
+print $N "**Beta: a test build, not for general use.**\n\n" if $beta;
 print $N "DreamStorm $Ver for OpenSim, built from $Sha on branch $Branch.\n\n";
 print $N "Download page: $WebUrl/DreamStorm/\n\n";
 print $N "Windows installer is signed by Outworldz. The macOS .dmg and Linux .tar.xz are added by the GitHub action.\n";
 print $N "\nChanges since $prev:\n\n" . join( '', map { "- $_\n" } split /\n/, $log ) if $log =~ /\S/;
 close $N;
 
-RunOrFail("gh release create $Tag \"$Exe\" --repo $Repo --verify-tag --title \"DreamStorm $Ver\" --notes-file \"$notesFile\"");
+my $kind  = $beta ? '--prerelease --latest=false' : '--latest';
+my $title = "DreamStorm $Ver" . ( $beta ? ' Beta' : '' );
+RunOrFail("gh release create $Tag \"$Exe\" --repo $Repo --verify-tag $kind --title \"$title\" --notes-file \"$notesFile\"");
 
 my $dispatched = time;
 RunOrFail("gh workflow run $Workflow --repo $Repo --ref $Tag -f release_tag=$Tag");
+
+if ($beta) {
+    # A Beta does not wait for the Mac/Linux build and does not touch the download page.
+    Say( "\nBeta $Ver is ready.\n  Windows: $WebUrl/DreamStorm/Beta/" . basename($Exe) );
+    Say("  GitHub pre-release: https://github.com/$Repo/releases/tag/$Tag");
+    Say("  The .dmg and .tar.xz are added there by the GitHub action in about 1-2 hours:");
+    Say("  https://github.com/$Repo/actions/workflows/$Workflow");
+    Done();
+}
+
 unless ($dry) {
     my $id;
     for ( 1 .. 30 ) {
@@ -318,6 +327,7 @@ sub CheckGh {
 # checks the live page, then deletes the old .exe in Grid/DreamStorm.
 sub Publish {
     my ($tag) = @_;
+    Fail("$tag is a Beta. Only Releases go on the download page.") if $tag =~ /-beta$/;
     ( my $ver = $tag ) =~ s/^\Q$TagPrefix\E//;
     Say("\nPublishing $tag on the web page");
 
